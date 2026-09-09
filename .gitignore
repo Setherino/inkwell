@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Built readers. The archive is built, never committed -- see below.
+dist/
+*.pyz
+IntroRobotics.command
+IntroRobotics.sh
+IntroRobotics.bat
+
+# The book. "Introduction to Autonomous Robots" is CC BY-NC-ND 4.0 and its
+# authors ask that compiled copies stay offline, so no converted chapter and
+# no built archive belongs in this repository. Build your own in one command:
+#     python3 tools/build_reader.py
+iar-*.json
