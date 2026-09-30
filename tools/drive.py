@@ -325,6 +325,174 @@ def library_scenario():
     return 1 if (boom or code != 0) else 0
 
 
+def escape_scenario():
+    """Press esc four times and watch the cursor climb the tree.
+
+        [open box] -esc-> [page] -esc-> [composer] -esc-> [folder]
+
+    Read off the screen rather than from the app: the halo's ✎ and its
+    button strip mean an open box, a ▌ in the gutter of a note means the
+    page, and the folder dialog announces itself.
+    """
+    import tempfile
+    sys.path.insert(0, ROOT)
+    from inkwell import store
+    folder = tempfile.mkdtemp()
+    store.save([store.Note("# Escape Ladder"),
+                store.Note("- first item"),
+                store.Note("- second item"),
+                store.Note("a plain paragraph to stand on.")],
+               os.path.join(folder, "ladder.json"))
+    d = Driver([sys.executable, "-m", "inkwell", "--theme", "dark", "--no-llm",
+                "--file", os.path.join(folder, "ladder.json")],
+               cols=86, rows=20, env={"INKWELL_DIR": folder})
+    d.pump(1.2)
+
+    ok = True
+
+    def where() -> str:
+        """Which level of the tree the screen is showing."""
+        rows = d.screen.text()
+        if any("new:" in line for line in rows):
+            return "root"
+        if any("✎" in line for line in rows):
+            return "editing"
+        if any(line.startswith("▌") for line in rows[:-2]):
+            return "page"
+        return "composer"
+
+    def check(label, want):
+        nonlocal ok
+        got = where()
+        print(("PASS " if got == want else f"FAIL (saw {got}) ") + label)
+        ok &= got == want
+
+    d.key(b"\x1b[A", wait=0.4)            # up out of the composer, into the page
+    check("arrow up out of the composer reaches the page", "page")
+    d.key(b"\r", wait=0.4)                # enter opens the note
+    check("enter opens the note", "editing")
+    d.send(" and typed on the way", pause=0.02)
+    d.screen.show("deepest: an open box")
+
+    d.key(b"\x1b", wait=0.5)
+    check("esc 1: out of the box, still in the page", "page")
+    d.screen.show("esc 1: the page, note half-selected")
+    d.key(b"\x1b", wait=0.5)
+    check("esc 2: down to the composer", "composer")
+    d.screen.show("esc 2: the box at the bottom")
+    d.key(b"\x1b", wait=0.6)
+    check("esc 3: up to the folder of notebooks", "root")
+    d.screen.show("esc 3: the root of the tree")
+    d.key(b"\x1b", wait=0.6)
+    check("esc 4: the root steps aside, back where it came from", "composer")
+
+    kept = [n.text for n in store.load(os.path.join(folder, "ladder.json"))]
+    typed = "a plain paragraph to stand on. and typed on the way"
+    print(("PASS " if typed in kept else "FAIL ")
+          + "going up kept what was typed on the way")
+    ok &= typed in kept
+
+    code = d.close()
+    boom = d.crashed()
+    print("\nexit code:", code)
+    if boom:
+        print("CRASHED:\n" + boom)
+    return 0 if (ok and not boom and code == 0) else 1
+
+
+def shelf_scenario():
+    """Two books in one folder: pick one, read it, esc back out through both.
+
+        [open box] -esc-> [page] -esc-> [composer] -esc-> [contents] -esc-> [shelf]
+    """
+    import tempfile
+    sys.path.insert(0, ROOT)
+    from pathlib import Path
+    from inkwell import reader, store
+    folder = Path(tempfile.mkdtemp())
+    for prefix, title, chapters in (
+            ("iar", "Autonomous Robots",
+             {"01-introduction": ["# 1  Introduction", "## 1.1  Sensing",
+                                  "A robot senses before it acts."],
+              "02-kinematics": ["# 2  Kinematics", "## 2.1  Forward",
+                                "Odometry drifts as the wheels slip."]}),
+            ("thermo", "Engineering Thermodynamics",
+             {"01-first-law": ["# 1  The First Law", "## 1.1  Energy",
+                               "Energy is conserved in a closed system."],
+              "02-entropy": ["# 2  Entropy", "## 2.1  Reversibility",
+                             "Entropy always increases."]})):
+        for stem, notes in chapters.items():
+            store.save([store.Note(t) for t in notes],
+                       folder / f"{prefix}-{stem}.json")
+        reader.write_manifest(folder, prefix, title)
+
+    d = Driver([sys.executable, "-m", "inkwell.reader", "--theme", "dark"],
+               cols=86, rows=20, env={"INKWELL_DIR": str(folder)})
+    d.pump(1.6)
+
+    ok = True
+
+    def check(label, cond):
+        nonlocal ok
+        print(("PASS " if cond else "FAIL ") + label)
+        ok &= bool(cond)
+
+    screen = "\n".join(d.screen.text())
+    check("opens on the shelf when the folder holds two books",
+          "Autonomous Robots" in screen and "Engineering Thermodynamics" in screen)
+    check("the shelf says how much of each book there is", "chapters" in screen)
+    d.screen.show("the shelf: two books, discovered not configured")
+
+    d.send("thermo", pause=0.04)
+    screen = "\n".join(d.screen.text())
+    check("typing filters the shelf",
+          "Engineering Thermodynamics" in screen
+          and "Autonomous Robots" not in screen)
+
+    d.key(b"\r", wait=0.8)
+    screen = "\n".join(d.screen.text())
+    check("enter opens that book's contents",
+          "The First Law" in screen and "Entropy" in screen)
+    d.screen.show("its contents -- chapters and sections")
+
+    d.key(b"\r", wait=0.4)              # enter on a chapter unfolds it
+    screen = "\n".join(d.screen.text())
+    check("enter unfolds a chapter into its sections", "1.1  Energy" in screen)
+    d.key(b"\x1b[B", wait=0.2)          # down onto that section
+    d.key(b"\r", wait=1.0)              # ...and open it
+    screen = "\n".join(d.screen.text())
+    check("enter on a section opens the chapter there",
+          "type to search the book" not in screen)
+    d.screen.show("reading a chapter of the book that was picked")
+
+    d.key(b"\x1b[A", wait=0.4)          # up into the page
+    d.key(b"\r", wait=0.4)              # open the note
+    rows = d.screen.text()
+    check("a book takes margin notes", any("✎" in r for r in rows))
+
+    for label, want in (("esc 1: out of the box, into the page", "▌"),
+                        ("esc 2: down to the composer", None),
+                        ("esc 3: up to the contents", "type to search the book"),
+                        ("esc 4: up to the shelf", "Autonomous Robots")):
+        d.key(b"\x1b", wait=0.6)
+        rows = d.screen.text()
+        if want is None:
+            check(label, not any("✎" in r for r in rows)
+                  and not any(r.startswith("▌") for r in rows[:-2]))
+        elif want == "▌":
+            check(label, any(r.startswith("▌") for r in rows[:-2]))
+        else:
+            check(label, want in "\n".join(rows))
+    d.screen.show("esc 4: back on the shelf, having climbed five levels")
+
+    code = d.close()
+    boom = d.crashed()
+    print("\nexit code:", code)
+    if boom:
+        print("CRASHED:\n" + boom)
+    return 0 if (ok and not boom and code == 0) else 1
+
+
 def scenario():
     """Type a small document and re-lay it at four widths."""
     d = Driver([sys.executable, "-m", "inkwell", "--no-save", "--no-llm"],
@@ -366,4 +534,8 @@ if __name__ == "__main__":
         sys.exit(llm_scenario())
     if "--library" in sys.argv:
         sys.exit(library_scenario())
+    if "--escape" in sys.argv:
+        sys.exit(escape_scenario())
+    if "--shelf" in sys.argv:
+        sys.exit(shelf_scenario())
     sys.exit(click_scenario() if "--clicks" in sys.argv else scenario())

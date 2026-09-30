@@ -6,10 +6,19 @@ run-on should become a list, and which phrase carries the weight. It never
 chooses type sizes -- that is document.py's and typography.py's business.
 
 The heuristics in shaping.py run instantly and are always what you see
-first. If a Kubi/gateway key is around, each new note is also sent to
-gpt-oss-20b in a background thread; when the answer lands the note
+first. This lane is **off unless you point it somewhere**: set both
+``INKWELL_LLM_URL`` (any OpenAI-compatible /v1 endpoint -- llama.cpp,
+vLLM, Ollama, a hosted API) and a key, and each new note is also sent to
+the model in a background thread; when the answer lands the note
 re-formats in place. Nothing here is on the typing path, and every failure
-mode ends in "keep what the markup said".
+mode ends in "keep what the markup said", so inkwell is complete without it.
+
+    export INKWELL_LLM_URL=http://localhost:8080/v1
+    export INKWELL_LLM_KEY=whatever-your-endpoint-wants
+    export INKWELL_LLM_MODEL=some-model        # optional
+
+There is no default endpoint on purpose: a notes app should not send
+anything anywhere until its owner has said where.
 """
 
 from __future__ import annotations
@@ -26,15 +35,16 @@ from typing import Callable, Optional
 
 from . import shaping as S
 
-GATEWAY = os.environ.get("INKWELL_LLM_URL",
-                         "https://sovereign-ai-gateway.tail41b652.ts.net/v1")
-MODEL = os.environ.get("INKWELL_LLM_MODEL", "gpt-oss-20b")
-# Same credentials Lectern's notes lane uses (the whisper key cannot call
-# gpt-oss-20b, so prefer the notes-scoped one).
-KEY_FILES = (Path.home() / ".config/lectern/notes-key",
-             Path.home() / ".config/lectern/key")
-KEY_ENV = ("INKWELL_LLM_KEY", "LECTERN_NOTES_KEY", "LECTERN_GATEWAY_KEY",
-           "LITELLM_API_KEY")
+# No default endpoint: nothing leaves this machine until you name one.
+GATEWAY = os.environ.get("INKWELL_LLM_URL", "")
+MODEL = os.environ.get("INKWELL_LLM_MODEL", "default")
+# Reasoning models want to be told not to monologue; everything else
+# would reject the field, so it is sent only when asked for.
+EFFORT = os.environ.get("INKWELL_LLM_EFFORT", "")
+# A key may also be left in a file, so it stays out of your shell history
+# and your environment.
+KEY_FILES = (Path.home() / ".config/inkwell/key",)
+KEY_ENV = ("INKWELL_LLM_KEY",)
 
 BLOCKS = S.FORMATTABLE
 
@@ -129,10 +139,14 @@ class Muse:
     """A one-thread work queue in front of the model."""
 
     def __init__(self, key: Optional[str] = None, url: str = GATEWAY,
-                 model: str = MODEL, opener=None, timeout: float = 30.0) -> None:
+                 model: str = MODEL, opener=None, timeout: float = 30.0,
+                 effort: str = EFFORT) -> None:
         self.key = key if key is not None else resolve_key()
-        self.url = url.rstrip("/") + "/chat/completions"
-        self.model = model
+        # An unset endpoint stays unset -- "" must not become a bare path
+        # that looks like somewhere to send notes.
+        self.url = (url.rstrip("/") + "/chat/completions") if url.strip() else ""
+        self.model = model or "default"
+        self.effort = effort
         self.timeout = timeout
         self._opener = opener or urllib.request.urlopen
         self._ctx = ssl.create_default_context()
@@ -144,7 +158,8 @@ class Muse:
 
     @property
     def enabled(self) -> bool:
-        return bool(self.key)
+        """Both halves, or nothing: a key with nowhere to go is not a lane."""
+        return bool(self.key and self.url)
 
     def ask(self, note_id: int, text: str, wake: Optional[Callable] = None,
             context: Optional[list] = None) -> None:
@@ -189,15 +204,17 @@ class Muse:
         above = "\n".join(f"- {line}" for line in (context or []))
         user = (f"Notes already on the page:\n{above}\n\nNew note:\n{text}"
                 if above else f"New note:\n{text}")
-        body = json.dumps({
+        fields = {
             "model": self.model,
-            # gpt-oss needs both of these: low effort to stop it monologuing,
-            # json_object so the reply is parseable.
-            "reasoning_effort": "low",
+            # Ask for parseable output. Endpoints that do not know the field
+            # ignore it; the reply is checked either way.
             "response_format": {"type": "json_object"},
             "messages": [{"role": "system", "content": PROMPT},
                          {"role": "user", "content": user}],
-        }).encode()
+        }
+        if self.effort:                 # reasoning models only -- see EFFORT
+            fields["reasoning_effort"] = self.effort
+        body = json.dumps(fields).encode()
         req = urllib.request.Request(
             self.url, data=body,
             headers={"Content-Type": "application/json",

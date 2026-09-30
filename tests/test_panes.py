@@ -135,12 +135,12 @@ class EditTests(unittest.TestCase):
         self.widget.keypress((80,), "enter")
         self.assertEqual(self.widget.note.text, "left pane text || rewritten")
 
-    def test_escape_keeps_the_pane_and_closes(self):
+    def test_escape_is_handed_back_from_a_pane_too(self):
+        """An open pane is a level of the tree; see test_escape.py."""
         self.widget.start_pane_edit(1)
         retype(self.widget, "rewritten")
-        self.widget.keypress((80,), "esc")
-        self.assertFalse(self.widget.editing)
-        self.assertEqual(self.widget.note.text, "left pane text || rewritten")
+        self.assertEqual(self.widget.keypress((80,), "esc"), "esc")
+        self.assertTrue(self.widget.editing)
 
     def test_tab_walks_the_panes(self):
         self.widget.start_pane_edit(0)

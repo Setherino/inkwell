@@ -157,8 +157,11 @@ class DialogTests(unittest.TestCase):
         self.dialog.keypress((54,), "enter")
         self.assertEqual(self.chosen, [self.tmp / "lecture-4.json"])
 
-    def test_escape_closes_it(self):
-        self.dialog.keypress((54,), "esc")
+    def test_f2_closes_it_and_escape_is_left_to_the_app(self):
+        """f2 is the dialog's own toggle; esc is a rung of the tree."""
+        self.assertEqual(self.dialog.keypress((54,), "esc"), "esc")
+        self.assertEqual(self.closed, [])
+        self.dialog.keypress((54,), "f2")
         self.assertEqual(self.closed, [True])
 
     def test_clicking_a_notebook_opens_it(self):

@@ -65,7 +65,7 @@ class Contents(unittest.TestCase):
         self.folder = make_book(Path(tempfile.mkdtemp()))
 
     def test_chapters_come_in_reading_order_with_their_sections(self):
-        chapters = reader.contents(self.folder)
+        chapters = reader.contents(self.folder, "iar")
         self.assertEqual([c.title for c in chapters],
                          ["Preface", "1  Introduction", "2  Kinematics",
                           "A  Trigonometry"])
@@ -76,11 +76,11 @@ class Contents(unittest.TestCase):
         self.assertEqual(intro.count, 38)
 
     def test_other_notebooks_in_the_folder_are_not_part_of_the_book(self):
-        titles = [c.title for c in reader.contents(self.folder)]
+        titles = [c.title for c in reader.contents(self.folder, "iar")]
         self.assertNotIn("HW0", titles)
 
     def test_rows_show_collapsed_chapters_until_one_is_opened(self):
-        chapters = reader.contents(self.folder)
+        chapters = reader.contents(self.folder, "iar")
         rows = reader.rows(chapters, expanded=set(), query="")
         self.assertEqual([r.text for r in rows],
                          ["Preface", "1  Introduction", "2  Kinematics",
@@ -92,7 +92,7 @@ class Contents(unittest.TestCase):
         self.assertEqual(rows[2].section.index, 2)
 
     def test_typing_filters_sections_across_the_whole_book(self):
-        chapters = reader.contents(self.folder)
+        chapters = reader.contents(self.folder, "iar")
         rows = reader.rows(chapters, expanded=set(), query="kine")
         self.assertEqual([r.text for r in rows],
                          ["2  Kinematics", "  2.1  Forward Kinematics",
@@ -107,7 +107,7 @@ class Contents(unittest.TestCase):
 class Menu(unittest.TestCase):
     def setUp(self):
         self.folder = make_book(Path(tempfile.mkdtemp()))
-        self.chapters = reader.contents(self.folder)
+        self.chapters = reader.contents(self.folder, "iar")
         self.menu = reader.Menu(self.chapters)
         self.got = []
         urwid.connect_signal(self.menu, "chosen",
@@ -143,11 +143,15 @@ class Menu(unittest.TestCase):
         self.menu.keypress((70, 20), "enter")
         self.assertEqual(self.got, [(self.chapters[2].path, 1)])
 
-    def test_esc_closes_and_backspace_clears_the_filter_first(self):
+    def test_backspace_clears_the_filter_and_f2_closes_the_menu(self):
         self.menu.keypress((70, 20), "k")
         self.menu.keypress((70, 20), "backspace")
         self.assertIn("Introduction", "\n".join(self.screen()))
-        self.menu.keypress((70, 20), "esc")
+        # Esc is a rung of the tree, so the menu hands it up (test_escape.py);
+        # f2 is the toggle it keeps for itself.
+        self.assertEqual(self.menu.keypress((70, 20), "esc"), "esc")
+        self.assertEqual(self.got, [])
+        self.menu.keypress((70, 20), "f2")
         self.assertEqual(self.got, ["closed"])
 
     def test_the_menu_is_readable_at_narrow_widths(self):
@@ -162,7 +166,7 @@ class Search(unittest.TestCase):
 
     def setUp(self):
         self.folder = make_book(Path(tempfile.mkdtemp()))
-        self.chapters = reader.contents(self.folder)
+        self.chapters = reader.contents(self.folder, "iar")
 
     def screen(self, menu, size=(70, 20)):
         canvas = menu.render(size, True)
@@ -442,29 +446,28 @@ class Build(unittest.TestCase):
         self.assertTrue((home / "iar-02-kinematics.json").exists())
         self.assertFalse((home / "HW0.json").exists())
 
-    def test_the_book_is_cloned_from_its_own_repo_shallow_and_by_url(self):
-        """Nobody has to find the LaTeX source: the build fetches it."""
+    def test_any_book_is_cloned_shallow_from_the_url_it_is_given(self):
+        """--clone takes a URL: the build is not tied to one book."""
         asked = []
-        build_reader.fetch_book(self.tmp / "clone",
+        build_reader.fetch_book(self.tmp / "clone", "https://example.test/b.git",
                                 run=lambda cmd, **kw: asked.append((cmd, kw)))
         (cmd, kw), = asked
         self.assertEqual(cmd[:2], ["git", "clone"])
         self.assertIn("--depth", cmd)
-        self.assertEqual(cmd[-2], build_reader.BOOK_REPO)
+        self.assertEqual(cmd[-2], "https://example.test/b.git")
         self.assertEqual(cmd[-1], str(self.tmp / "clone"))
         self.assertTrue(kw.get("check"))
 
-    def test_a_teammate_with_no_clone_of_the_book_gets_one(self):
-        """--book is a path that only exists on the author's machine."""
-        plan = build_reader.plan(book=self.tmp / "nowhere", notebooks=None,
-                                 clone=False)
-        self.assertEqual(plan, "clone")
-        self.assertEqual(build_reader.plan(book=self.tmp, notebooks=None,
-                                           clone=False), "convert")
-        self.assertEqual(build_reader.plan(book=self.tmp, notebooks=self.tmp,
-                                           clone=False), "notebooks")
-        self.assertEqual(build_reader.plan(book=self.tmp, notebooks=None,
-                                          clone=True), "clone")
+    def test_where_a_build_gets_its_books_from(self):
+        """A URL is cloned, a LaTeX root converted, and neither packs the
+        notes folder as it stands -- the common case once a book is in it."""
+        self.assertEqual(build_reader.plan(clone="https://example.test/b.git"),
+                         "clone")
+        self.assertEqual(build_reader.plan(book=self.tmp), "convert")
+        self.assertEqual(build_reader.plan(notebooks=self.tmp), "notebooks")
+        self.assertEqual(build_reader.plan(), "notebooks")
+        with self.assertRaises(SystemExit):
+            build_reader.plan(book=self.tmp / "nowhere")
 
     def test_where_says_where_the_notebooks_live(self):
         home = self.tmp / "home2"

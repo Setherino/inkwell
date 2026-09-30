@@ -105,7 +105,7 @@ class BreakTests(Fixture):
         widget = self.open_at(0, len("a note"))
         for character in " and more":
             widget.keypress((80,), character)
-        widget.keypress((80,), "esc")
+        self.app.unhandled("esc")       # up out of the box, keeping it
         self.assertEqual(self.texts(), ["a note and more"])
 
     def test_the_discard_button_throws_it_away(self):

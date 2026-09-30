@@ -299,7 +299,7 @@ class MuseTests(unittest.TestCase):
 
     def test_a_reply_comes_back_through_the_queue(self):
         canned = Canned('{"block":"callout","tag":"thermal"}')
-        sage = M.Muse(key="k", opener=canned)
+        sage = M.Muse(key="k", url="http://localhost:1/v1", opener=canned)
         done = threading.Event()
         sage.ask(7, "everything is on fire", wake=done.set,
                  context=["## Test rack"])
@@ -311,7 +311,7 @@ class MuseTests(unittest.TestCase):
         self.assertIn("## Test rack", sent["messages"][1]["content"])
 
     def test_network_failure_is_swallowed(self):
-        sage = M.Muse(key="k", opener=Canned("", boom=OSError("no route")))
+        sage = M.Muse(key="k", url="http://localhost:1/v1", opener=Canned("", boom=OSError("no route")))
         sage.ask(1, "some text")
         for worker in threading.enumerate():
             if worker is not threading.current_thread() and worker.daemon:
@@ -319,13 +319,29 @@ class MuseTests(unittest.TestCase):
         self.assertEqual(sage.drain(), [])
         self.assertEqual(sage.pending, 0)
 
-    def test_the_prompt_asks_for_json_and_low_effort(self):
+    def test_the_prompt_asks_for_json_and_carries_the_key(self):
         canned = Canned('{"block":"para"}')
-        M.Muse(key="k", opener=canned).classify("hello")
+        M.Muse(key="k", url="http://localhost:1/v1", opener=canned).classify("hello")
         sent = json.loads(canned.req.data)
         self.assertEqual(sent["response_format"], {"type": "json_object"})
-        self.assertEqual(sent["reasoning_effort"], "low")
         self.assertEqual(canned.req.headers["Authorization"], "Bearer k")
+
+    def test_reasoning_effort_is_opt_in(self):
+        """Only reasoning models know the field; the rest would reject it."""
+        canned = Canned('{"block":"para"}')
+        M.Muse(key="k", url="http://localhost:1/v1", opener=canned).classify("hi")
+        self.assertNotIn("reasoning_effort", json.loads(canned.req.data))
+
+        canned = Canned('{"block":"para"}')
+        M.Muse(key="k", url="http://localhost:1/v1", opener=canned,
+               effort="low").classify("hi")
+        self.assertEqual(json.loads(canned.req.data)["reasoning_effort"], "low")
+
+    def test_a_key_with_nowhere_to_send_it_is_not_a_lane(self):
+        """No default endpoint: nothing leaves the machine unaddressed."""
+        self.assertFalse(M.Muse(key="k", url="").enabled)
+        self.assertFalse(M.Muse(key="", url="http://localhost:1/v1").enabled)
+        self.assertTrue(M.Muse(key="k", url="http://localhost:1/v1").enabled)
 
 
 class AbsorbTests(unittest.TestCase):

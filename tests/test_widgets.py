@@ -129,13 +129,18 @@ class EditTests(unittest.TestCase):
         self.assertTrue(widget.editing)
         self.assertEqual(widget._edit.edit_text, "hello\n")
 
-    def test_escape_keeps_the_edit_and_closes(self):
+    def test_escape_is_handed_back_rather_than_answered(self):
+        """Esc means "up a level", and a note cannot know what is above it.
+
+        What going up actually does to an open box is in test_escape.py,
+        where the app that owns the tree can be asked.
+        """
         widget = note("hello")
         widget.start_edit()
         retype(widget, "kept")
-        widget.keypress((60,), "esc")
-        self.assertFalse(widget.editing)
-        self.assertEqual(widget.note.text, "kept")
+        self.assertEqual(widget.keypress((60,), "esc"), "esc")
+        self.assertTrue(widget.editing)
+        self.assertEqual(widget._edit.edit_text, "kept")
 
     def test_the_discard_button_abandons_it(self):
         widget = note("hello")
@@ -221,15 +226,15 @@ class ComposerTests(unittest.TestCase):
         box.keypress((40,), "enter")
         self.assertEqual(out, ["one.", "two.", "three"])
 
-    def test_escape_and_sink_are_reported(self):
+    def test_an_empty_box_reports_an_arrow_up_as_a_sink(self):
         import urwid
         box = Composer()
         seen = []
-        urwid.connect_signal(box, "escape", lambda _w: seen.append("escape"))
         urwid.connect_signal(box, "sink", lambda _w: seen.append("sink"))
-        box.keypress((40,), "esc")
         box.keypress((40,), "up")
-        self.assertEqual(seen, ["escape", "sink"])
+        self.assertEqual(seen, ["sink"])
+        # ...and esc is not the composer's to answer: it goes up the tree.
+        self.assertEqual(box.keypress((40,), "esc"), "esc")
 
 
 if __name__ == "__main__":

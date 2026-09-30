@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Turn a LaTeX textbook into inkwell notebooks, one per chapter.
 
-    python3 tools/tex2ink.py ~/projects/Introduction-to-Autonomous-Robots
-    python3 tools/tex2ink.py BOOK_DIR --out ~/Documents/Inkwell --prefix IAR
+    python3 tools/tex2ink.py ~/some-latex-book
+    python3 tools/tex2ink.py BOOK_DIR --out ~/Documents/Inkwell
+    python3 tools/tex2ink.py BOOK_DIR --prefix IAR --title "Some Book"
 
 The book's ``book.tex`` names the reading order (``\\input{chapters/...}``,
 ``\\part``, ``\\appendix``); each chapter becomes ``<prefix>-<nn>-<title>.json``
@@ -34,6 +35,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from inkwell import latex                  # noqa: E402
+from inkwell import reader                 # noqa: E402
 from inkwell import shaping as S           # noqa: E402
 from inkwell import store                  # noqa: E402
 
@@ -884,9 +886,45 @@ def _chapters(root: Path) -> list[dict]:
     return out
 
 
-def convert(root, out_dir, prefix: str = "IAR") -> list[Path]:
-    """Every chapter of the book at *root* -> notebooks in *out_dir*."""
+def book_title(root) -> str:
+    r"""What the book calls itself: ``\title{...}`` from its own source."""
+    root = Path(root)
+    for name in ("book.tex", "main.tex", "index.tex"):
+        path = root / name
+        if not path.exists():
+            continue
+        m = re.search(r"\\title\s*\{", _read(path))
+        if m:
+            title, _ = _group(_read(path), m.end() - 1)
+            title = re.sub(r"\\[A-Za-z]+\{?|[{}]|\\\\", " ", title)
+            title = " ".join(title.split())
+            if title:
+                return title
+    return root.resolve().name.replace("-", " ").replace("_", " ").strip()
+
+
+def prefix_for(root) -> str:
+    """A short prefix for a book with no name given: its initials.
+
+    "Introduction to Autonomous Robots" -> "IAR". Short titles keep their
+    first word instead, so a two-word book does not become two letters.
+    """
+    words = [w for w in re.split(r"[^A-Za-z0-9]+", book_title(root)) if w]
+    big = [w for w in words if w[0].isupper()]
+    if len(big) >= 3:
+        return "".join(w[0] for w in big[:5]).upper()
+    return (words[0][:8].upper() if words else "BOOK")
+
+
+def convert(root, out_dir, prefix: str = "", title: str = "") -> list[Path]:
+    """Every chapter of the book at *root* -> notebooks in *out_dir*.
+
+    Also writes ``<prefix>.book.json`` so the reader's shelf can show the
+    book's real name rather than guessing it from the file names.
+    """
     root, out_dir = Path(root), Path(out_dir)
+    prefix = prefix or prefix_for(root)
+    title = title or book_title(root)
     out_dir.mkdir(parents=True, exist_ok=True)
     bib_path = root / "robotics.bib"
     bib = Bibliography.parse(_read(bib_path)) if bib_path.exists() else Bibliography()
@@ -904,6 +942,7 @@ def convert(root, out_dir, prefix: str = "IAR") -> list[Path]:
         stamp = now - i * 60
         os.utime(path, (stamp, stamp))
         written.append(path)
+    reader.write_manifest(out_dir, prefix.lower(), title, str(root))
     return written
 
 
@@ -912,10 +951,14 @@ def main(argv=None) -> int:
     parser.add_argument("book", type=Path, help="folder holding book.tex")
     parser.add_argument("--out", type=Path, default=store.DEFAULT_DIR,
                         help=f"notes folder (default: {store.DEFAULT_DIR})")
-    parser.add_argument("--prefix", default="IAR",
-                        help="notebook name prefix (default: IAR)")
+    parser.add_argument("--title", default="",
+                        help="what to call the book (default: its own "
+                             "\\title{})")
+    parser.add_argument("--prefix", default="",
+                        help="notebook name prefix (default: the book's "
+                             "initials)")
     args = parser.parse_args(argv)
-    for path in convert(args.book, args.out, args.prefix):
+    for path in convert(args.book, args.out, args.prefix, args.title):
         count = len(store.load(path))
         print(f"{count:5d} notes  {path}")
     return 0

@@ -4,6 +4,10 @@ A note is *always* an editable text box -- it just spends most of its life
 drawn as formatted document text. Clicking it (or Enter, or typing) swaps
 in a real ``urwid.Edit`` with a cursor where you clicked; Enter, Esc or
 clicking away swaps it back, re-formatted.
+
+None of these widgets handles esc. It means "up one level of the tree",
+and a widget cannot know what is above it -- so esc is handed back and
+``app.ascend`` deals with it. See the tree in app.py.
 """
 
 from __future__ import annotations
@@ -409,6 +413,8 @@ class NoteWidget(urwid.Widget):
 
     def keypress(self, size, key: str):
         (maxcol,) = size
+        if key == "esc":
+            return key              # up a level: the app's to answer, not ours
         if self.editing:
             if key in ("tab", "shift tab") and self._pane is not None:
                 step = 1 if key == "tab" else -1
@@ -424,10 +430,6 @@ class NoteWidget(urwid.Widget):
                 return None
             if key == "enter":
                 self.insert_break()     # a new line, not a new note
-                return None
-            if key == "esc":
-                self.stop_edit()        # keep it; ✕ is how you throw it away
-                self._emit("leave")
                 return None
             if key in ("up", "down") and self._pane is None:
                 inner = self._compose(maxcol, True)
@@ -456,9 +458,6 @@ class NoteWidget(urwid.Widget):
 
         if key == "enter":
             self.start_edit()
-            return None
-        if key == "esc":
-            self._emit("leave")
             return None
         block = self.block
         if key == " " and block is not None and block.kind == S.CHECK:
@@ -634,7 +633,7 @@ class NoteWidget(urwid.Widget):
 class Composer(Field):
     """The box at the bottom. Sentences leave it on their own."""
 
-    signals = [*urwid.Edit.signals, "commit", "typed", "escape", "sink"]
+    signals = [*urwid.Edit.signals, "commit", "typed", "sink"]
 
     def __init__(self) -> None:
         super().__init__(("prompt", "▌ "), "", multiline=False, wrap="space")
@@ -642,9 +641,6 @@ class Composer(Field):
     def keypress(self, size, key: str):
         if key == "enter":
             self.flush()
-            return None
-        if key == "esc":
-            self._emit("escape")
             return None
         if key in ("up", "page up") and not self.edit_text:
             self._emit("sink")
@@ -706,8 +702,10 @@ class Library(urwid.WidgetWrap):
         return getattr(shelf, "path", None)
 
     def keypress(self, size, key):
-        if key in ("esc", "f2"):
-            self._emit("closed")
+        if key == "esc":
+            return key              # up a level -- the app closes the dialog
+        if key == "f2":
+            self._emit("closed")    # ...f2 is a toggle, not a rung
             return None
         if key == "enter":
             typed = self.naming.edit_text.strip()

@@ -4,6 +4,13 @@ Layout is a Frame -- ListBox of notes over a composer. The only stateful
 thing worth knowing: nothing about a note's appearance is stored. Every
 frame, document.py re-lays each note at the current terminal size, so a
 resize is a re-format rather than a re-flow.
+
+The other thing worth knowing is where you are. The interface is a tree,
+so it is written down as one -- ``SHELF`` to ``EDITING`` below -- and esc is
+one step up it, from wherever you happen to be. ``ascend`` is the whole
+ladder in one place: no widget decides what "up" means from where it sits,
+they hand esc back and the app, which is the only thing that knows the
+shape of the tree, moves the cursor.
 """
 
 from __future__ import annotations
@@ -27,6 +34,17 @@ from .muse import Muse
 from .widgets import VIEW, Composer, Library, NoteWidget
 
 IDLE_COMMIT = 3.0        # seconds of quiet before an unfinished line is filed
+
+# The tree, deepest last. Esc always makes this number smaller.
+#
+# A tree can be taller in one app than another: the reader's shelf of books
+# sits at SHELF, above the contents of any one of them. Plain inkwell has
+# nothing above ROOT, so it simply never reports that level.
+SHELF = 0           # which book (the reader only)
+ROOT = 1            # the folder of notebooks (the reader: one book's contents)
+COMPOSER = 2        # the box at the bottom
+PAGE = 3            # a note has the cursor bar; arrows scroll
+EDITING = 4         # an open box -- the halo, or one of its panes
 
 class _Screen(urwid.raw_display.Screen):
     """A screen that keeps the editing keys for editing.
@@ -113,6 +131,7 @@ class Inkwell:
         self._said = ""            # something to tell the writer, once
         self._anchor: int | None = None    # where a note selection started
         self._grouping = 0                 # >0 while one gesture is under way
+        self._came_from: int | None = None  # the level the root is covering
         self.doc = Document()
         self.history = History()
         self.walker = urwid.SimpleFocusListWalker([])
@@ -134,7 +153,6 @@ class Inkwell:
 
         urwid.connect_signal(self.composer, "commit", lambda _w, text: self.commit(text))
         urwid.connect_signal(self.composer, "typed", lambda _w: self.touch())
-        urwid.connect_signal(self.composer, "escape", lambda _w: self.to_composer())
         urwid.connect_signal(self.composer, "sink", lambda _w: self.to_notes())
 
         self._stamp = store.stamp_of(path) if path else 0.0
@@ -142,6 +160,13 @@ class Inkwell:
             self._attach(note, refresh=False)
         self.remember()
         self._refresh()
+
+    def _close_boxes(self, *, except_for=None) -> None:
+        """Close every open edit box, keeping what it says. Focus untouched."""
+        with self.holding_the_view():
+            for widget in list(self._notes):
+                if widget.editing and widget is not except_for:
+                    widget.stop_edit()
 
     def _settle(self, blank_click: bool = False) -> None:
         """Close any edit box that no longer holds the cursor.
@@ -153,10 +178,7 @@ class Inkwell:
             self.stay()
             return
         focused = self.listbox.focus if self.frame.focus_position == "body" else None
-        with self.holding_the_view():
-            for widget in list(self._notes):
-                if widget.editing and widget is not focused:
-                    widget.stop_edit()
+        self._close_boxes(except_for=focused)
 
     def _on_resize(self) -> None:
         self._refresh()
@@ -500,6 +522,32 @@ class Inkwell:
         self._refresh()
         return True
 
+    # --- the root of the tree ---------------------------------------------
+    # The folder of notebooks sits above everything else; the reader puts its
+    # table of contents here instead, so these three are what ``ascend``
+    # talks to rather than the dialog itself.
+    def at_root(self) -> bool:
+        return self.library is not None
+
+    def open_root(self) -> None:
+        """Show the top of the tree: f2, and esc out of the composer."""
+        if not self.at_root():
+            # Coming up here is leaving the note you were in, so the box
+            # closes (keeping its text) -- and esc back down must never land
+            # in an edit box that is no longer open.
+            self._came_from = min(self.depth(), PAGE)
+            self._close_boxes()
+        self.open_library()
+
+    def close_root(self) -> None:
+        self.close_library()
+
+    def _uncover(self) -> None:
+        """Put the cursor back at the level the root was covering."""
+        level = self._came_from
+        self._came_from = None
+        self.go_to(PAGE if level is None else level)
+
     # --- notebooks --------------------------------------------------------
     def open_library(self) -> None:
         """Show the folder of notebooks."""
@@ -521,7 +569,7 @@ class Inkwell:
         self.library = None
         if self.loop:
             self.loop.widget = self.frame
-        self.stay()
+        self._uncover()
 
     def load_notebook(self, path) -> None:
         """Save what is open, then put another notebook on the page."""
@@ -591,17 +639,55 @@ class Inkwell:
         except Exception:                   # noqa: BLE001
             return True
 
+    # --- where you are in the tree ----------------------------------------
+    def depth(self) -> int:
+        """Which level of the tree has the cursor. Esc always lowers it."""
+        if self.at_root():
+            return ROOT
+        if any(widget.editing for widget in self._notes):
+            return EDITING
+        return PAGE if self.frame.focus_position == "body" else COMPOSER
+
+    def ascend(self) -> bool:
+        """Esc: one step up the tree, from wherever you are in it.
+
+        A picked run of notes, a selection inside a box, a filter typed
+        into the contents -- those decorate a level rather than being one
+        of their own, so they go when you leave the level they belong to.
+        Nothing costs two presses to get out of.
+        """
+        here = self.depth()
+        if here == EDITING:
+            self.stay()             # the box closes, keeping what it says
+        elif here == PAGE:
+            self.unpick()           # a picked run belongs to the page you left
+            self.to_composer()
+        elif here == COMPOSER:
+            self.open_root()
+        else:
+            # At the top, or on the level above it. Whatever is showing
+            # steps aside; if something was covering another modal, that
+            # one is what you come back to.
+            self.close_root()
+        self._refresh()
+        return True
+
+    def go_to(self, level: int) -> None:
+        """Put the cursor on a level: PAGE, or the composer below it."""
+        if level >= PAGE:
+            self.stay()
+        else:
+            self.to_composer()
+
     # --- focus ------------------------------------------------------------
     def stay(self) -> None:
         """Close whatever is open, and stay in the page.
 
-        The box at the bottom is only ever reached by clicking it, so
-        finishing a note leaves you among the notes, ready to arrow about.
+        Finishing a note leaves you among the notes, ready to arrow about
+        -- one rung up is esc's job, not Enter's.
         """
-        with self.holding_the_view():
-            for widget in self._notes:
-                widget.stop_edit()
-            self.frame.focus_position = "body" if self._notes else "footer"
+        self._close_boxes()
+        self.frame.focus_position = "body" if self._notes else "footer"
 
     def step(self, widget, direction: int) -> None:
         """Move to the note above or below (an arrow off the end of a note)."""
@@ -621,10 +707,8 @@ class Inkwell:
 
     def to_composer(self) -> None:
         """Put the pen down. The page stays where it is."""
-        with self.holding_the_view():
-            for widget in self._notes:
-                widget.stop_edit()
-            self.frame.focus_position = "footer"
+        self._close_boxes()
+        self.frame.focus_position = "footer"
 
     def to_notes(self) -> None:
         """Step up into the page, onto the nearest note you can see.
@@ -797,7 +881,7 @@ class Inkwell:
             self.redo()
             return True
         if key == "f2":
-            self.open_library()
+            self.open_root()
             return True
         if key == "f5":
             self.set_theme(themes.other(self.theme))
@@ -824,9 +908,7 @@ class Inkwell:
             self._invalidate_all()
             return True
         if key == "esc":
-            self.unpick()
-            self.stay()
-            return True
+            return self.ascend()        # ...one step up the tree, always
         if key == "down" and self.frame.focus_position == "body":
             if self._notes and self.listbox.focus is self._notes[-1]:
                 self.to_composer()
@@ -898,7 +980,8 @@ def resolve(given=None, directory: Path | None = None) -> Path:
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="inkwell", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="inkwell", description=__doc__.split("\n\n")[0])
     parser.add_argument("notebook", nargs="?", type=Path, default=None,
                         help="a notebook in the folder, by name (\"HW0\")")
     parser.add_argument("--file", type=Path, default=None,

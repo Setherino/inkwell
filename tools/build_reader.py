@@ -2,7 +2,7 @@
 """Pack the textbook reader into one portable file.
 
     python3 tools/build_reader.py                       # dist/IntroRobotics.pyz
-    python3 tools/build_reader.py --book ~/projects/Introduction-to-Autonomous-Robots
+    python3 tools/build_reader.py --clone iar        # a book, by name
     python3 tools/build_reader.py --notebooks ~/Documents/Inkwell --out /tmp/x/Reader.pyz
 
 The result is a Python zip application: inkwell, the reader, the book's
@@ -40,12 +40,25 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from inkwell import reader  # noqa: E402
+from inkwell import reader, store  # noqa: E402
 
-# Where the book comes from: the authors' own repository, the only place a
-# copy of it should be got from.
-BOOK_REPO = ("https://github.com/Introduction-to-Autonomous-Robots"
-             "/Introduction-to-Autonomous-Robots.git")
+# Books that are published openly and convert cleanly, so fetching one is a
+# single command with nothing to look up. This is a convenience list, not a
+# capability: --clone takes any git URL, and the tool has no opinion about
+# which book you read. A book's own licence governs its text -- see the
+# README -- which is why nothing here is redistributed, only fetched.
+CATALOGUE = {
+    "iar": ("https://github.com/Introduction-to-Autonomous-Robots"
+            "/Introduction-to-Autonomous-Robots.git",
+            "Introduction to Autonomous Robots",
+            "CC BY-NC-ND 4.0, print edition (c) MIT Press"),
+}
+
+
+def source_url(what: str) -> str:
+    """What --clone was given: a catalogue name, or a URL as it stands."""
+    known = CATALOGUE.get(str(what).strip().lower())
+    return known[0] if known else what
 
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "*.so", "*.pyd",
                                 "tests", "test_*")
@@ -70,20 +83,27 @@ if errorlevel 1 pause
 """
 
 
-def fetch_book(into, url: str = BOOK_REPO, run=subprocess.run) -> Path:
-    """Clone the book's LaTeX source into *into*. Shallow: only the text."""
+def fetch_book(into, url: str, run=subprocess.run) -> Path:
+    """Clone a book's LaTeX source into *into*. Shallow: only the text."""
     into = Path(into)
     run(["git", "clone", "--depth", "1", url, str(into)], check=True)
     return into
 
 
-def plan(book, notebooks, clone: bool) -> str:
-    """Where this build gets the book: given notebooks, a clone, or a fetch."""
-    if notebooks:
-        return "notebooks"
-    if clone or not Path(book).is_dir():
+def plan(book=None, notebooks=None, clone=None) -> str:
+    """Where this build gets its books.
+
+    A URL is cloned, a LaTeX root is converted, and with neither the notes
+    folder is packed exactly as it stands -- which is the common case once
+    a book has been converted into it.
+    """
+    if clone:
         return "clone"
-    return "convert"
+    if book and Path(book).is_dir():
+        return "convert"
+    if book:
+        raise SystemExit(f"no LaTeX source at {book}")
+    return "notebooks"
 
 
 def _vendor(name: str) -> Path:
@@ -124,12 +144,30 @@ def patch_urwid(urwid_dir: Path) -> None:
         path.write_text(text.replace(LAZY_ANCHOR, LAZY_GUARD + LAZY_ANCHOR))
 
 
-def stage(notebooks: Path, staging: Path, prefix: str = reader.PREFIX) -> None:
+def shelved(notebooks: Path, prefix: str = "") -> list:
+    """The files one archive should carry: whole books, and what names them.
+
+    With no prefix every book in the folder travels, so one archive can hold
+    a shelf. Loose notebooks are left behind -- they are somebody's notes,
+    not a book.
+    """
+    notebooks = Path(notebooks)
+    wanted = [prefix] if prefix else reader.prefixes(notebooks)
+    files: list = []
+    for each in wanted:
+        files += sorted(notebooks.glob(f"{each}-*.json"))
+        manifest = reader.manifest_path(notebooks, each)
+        if manifest.exists():
+            files.append(manifest)
+    return files
+
+
+def stage(notebooks: Path, staging: Path, prefix: str = "") -> None:
     """Lay the archive out in *staging*."""
     shutil.copytree(ROOT / "inkwell", staging / "inkwell", ignore=IGNORE)
     book = staging / "inkwell" / reader.BOOK_FOLDER
     book.mkdir()
-    for path in sorted(Path(notebooks).glob(f"{prefix}-*.json")):
+    for path in shelved(notebooks, prefix):
         shutil.copy2(path, book / path.name)
     for dep in ("urwid", "wcwidth"):
         shutil.copytree(_vendor(dep), staging / dep, ignore=IGNORE)
@@ -152,7 +190,7 @@ def launchers(out: Path, name: str) -> list:
     return made
 
 
-def build(notebooks, out, name: str = "IntroRobotics", prefix: str = reader.PREFIX,
+def build(notebooks, out, name: str = "Reader", prefix: str = "",
           with_launchers: bool = False) -> Path:
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -171,35 +209,74 @@ def build(notebooks, out, name: str = "IntroRobotics", prefix: str = reader.PREF
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     source = parser.add_mutually_exclusive_group()
-    source.add_argument("--book", type=Path,
-                        default=Path.home() / "projects/Introduction-to-Autonomous-Robots",
-                        help="LaTeX root to convert fresh (default: the clone in ~/projects)")
-    source.add_argument("--notebooks", type=Path,
-                        help="pack an existing folder of iar-*.json instead")
-    source.add_argument("--clone", action="store_true",
-                        help="clone the book's LaTeX source from GitHub and "
-                             "convert that (what a fresh checkout does anyway)")
-    parser.add_argument("--out", type=Path, default=ROOT / "dist" / "IntroRobotics.pyz")
-    parser.add_argument("--name", default=None, help="archive name (default: from --out)")
+    source.add_argument("--book", type=Path, default=None,
+                        help="a LaTeX root to convert fresh")
+    source.add_argument("--notebooks", type=Path, default=None,
+                        help="pack a folder of already-converted notebooks "
+                             "(the default: your notes folder, whole shelf)")
+    source.add_argument("--clone", metavar="NAME_OR_URL", default=None,
+                        help="fetch a book's LaTeX source and convert it: a "
+                             "name from --books, or any git URL")
+    parser.add_argument("--books", action="store_true",
+                        help="list the books --clone knows by name, and stop")
+    parser.add_argument("--prefix", default="",
+                        help="pack just one book out of the folder, by prefix "
+                             "(default: every book in it)")
+    parser.add_argument("--title", default="",
+                        help="what to call a freshly converted book")
+    parser.add_argument("--out", type=Path, default=None,
+                        help="archive path (default: dist/<name>.pyz)")
+    parser.add_argument("--name", default=None,
+                        help="archive name (default: from --out, or the book)")
     parser.add_argument("--launchers", action="store_true",
                         help="also write .command/.sh/.bat wrappers beside the archive")
     args = parser.parse_args(argv)
-    name = args.name or args.out.stem
+    if args.books:
+        print("Books --clone knows by name:\n")
+        for name, (url, title, licence) in sorted(CATALOGUE.items()):
+            print(f"  {name:8s} {title}\n           {url}\n           {licence}\n")
+        print("Any git URL works too. Each copy is built locally from the\n"
+              "source the publisher offers; no book travels in this repository.")
+        return 0
 
     how = plan(args.book, args.notebooks, args.clone)
     if how == "notebooks":
-        notebooks = args.notebooks
+        notebooks = Path(args.notebooks or store.DEFAULT_DIR)
     else:
         source = args.book
         if how == "clone":
             source = Path(tempfile.mkdtemp(prefix="book-src-")) / "book"
-            print(f"fetching the book's LaTeX source from {BOOK_REPO}")
-            fetch_book(source)
+            url = source_url(args.clone)
+            print(f"fetching LaTeX source from {url}")
+            fetch_book(source, url)
         from tools import tex2ink
         notebooks = Path(tempfile.mkdtemp(prefix="book-"))
-        written = tex2ink.convert(source, notebooks, prefix=reader.PREFIX.upper())
+        prefix = args.prefix or tex2ink.prefix_for(source)
+        written = tex2ink.convert(source, notebooks, prefix=prefix,
+                                  title=args.title)
         print(f"converted {len(written)} chapters from {source}")
-    out = build(notebooks, args.out, name, with_launchers=args.launchers)
+        args.prefix = prefix.lower()
+
+    shelf = reader.books(notebooks)
+    if args.prefix:
+        shelf = [b for b in shelf if b.prefix == args.prefix.lower()]
+    if not shelf:
+        names = ", ".join(sorted(CATALOGUE))
+        print(f"no book to pack in {notebooks}.\n\n"
+              f"Fetch one that is known to convert cleanly ({names}):\n"
+              f"    python3 tools/build_reader.py --clone iar\n\n"
+              f"...or point it at a LaTeX tree, or any git URL:\n"
+              f"    python3 tools/build_reader.py --book ~/some-latex-book\n"
+              f"    python3 tools/build_reader.py --clone https://…/book.git\n\n"
+              f"See --books for the list, and --help for the rest.",
+              file=sys.stderr)
+        return 1
+    name = (args.name or (args.out.stem if args.out else None)
+            or (store.slug(shelf[0].title) if len(shelf) == 1 else "Shelf"))
+    out = args.out or ROOT / "dist" / (name + ".pyz")
+    print("packing: " + ", ".join(f"{b.title} ({len(b.chapters)})" for b in shelf))
+    out = build(notebooks, out, name, prefix=args.prefix,
+                with_launchers=args.launchers)
     size = out.stat().st_size // 1024
     print(f"{out}  ({size} KB)")
     for path in sorted(out.parent.glob(name + ".*")):
