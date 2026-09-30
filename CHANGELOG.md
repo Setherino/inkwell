@@ -28,6 +28,14 @@ Notable changes, newest first. Format follows
 
 ### Fixed
 
+- **Arrowing out of a box scrolled the whole page.** Walking off the end of
+  an open note steps to the note above or below; `change_focus()` takes the
+  row to put that note at and defaults to 0, so the one you landed on was
+  pinned to the top of the body and the document slid under you. Stepping
+  one note up could move the page five rows. It now lands where the note
+  already sits, and only scrolls when the note really is off screen --
+  the rule `to_notes` was already following, which `step` never got.
+
 - **An equation broken across two source lines was demoted to prose**, and
   prose sets its math inline -- one line, small -- so every stacked fraction
   in it came out as `r/2`. A math span is delimited, not line-based: LaTeX

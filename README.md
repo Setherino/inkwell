@@ -511,7 +511,7 @@ first. `--no-llm` turns it off.
 
 ## Tests
 
-    python3 -m unittest discover -s tests -t .    # 759 tests, stdlib only
+    python3 -m unittest discover -s tests -t .    # 763 tests, stdlib only
 
 `tests/test_lecture.py` is the end-to-end one: a student's 58 jotted notes
 from a thermodynamics lecture (fragments, run-ons, LaTeX, a table, a

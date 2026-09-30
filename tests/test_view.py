@@ -159,3 +159,61 @@ class SpacingClickTests(Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ArrowingOutOfABox(Fixture):
+    """Walking off the end of an open box steps to the next note.
+
+    The cursor moves; the page must not. urwid's change_focus() defaults
+    offset_inset to 0, which pins the note you land on to the top of the
+    body -- so stepping one note up scrolled the whole document instead.
+    """
+
+    def open_at(self, index):
+        """Focus a note, remember the shut page, then open the box."""
+        self.app.frame.focus_position = "body"
+        self.app.listbox.set_focus(index)
+        self.app.frame.render(SIZE, True)
+        self.anchor = self.screen()
+        widget = self.app._notes[index]
+        widget.start_edit()
+        self.app.frame.render(SIZE, True)
+        return widget
+
+    def test_arrowing_up_out_of_a_box_leaves_the_page_alone(self):
+        widget = self.open_at(15)
+        widget._edit.edit_pos = 0
+        widget.keypress((SIZE[0],), "up")
+        self.assertStill("arrowed up out of a box")
+
+    def test_arrowing_down_out_of_a_box_leaves_the_page_alone(self):
+        widget = self.open_at(15)
+        widget._edit.edit_pos = len(widget._edit.edit_text)
+        widget.keypress((SIZE[0],), "down")
+        self.assertStill("arrowed down out of a box")
+
+    def test_the_cursor_really_did_step(self):
+        widget = self.open_at(15)
+        widget._edit.edit_pos = 0
+        widget.keypress((SIZE[0],), "up")
+        self.assertEqual(self.app.listbox.focus_position, 14)
+        self.assertFalse(widget.editing, "and the box closed behind it")
+
+    def test_stepping_onto_a_note_off_the_top_still_scrolls_to_it(self):
+        """The page may move when it has to -- just not when it does not."""
+        size = self.app.frame.body_size
+        above = self.app.listbox.calculate_visible(size, True)[1][1]
+        first_visible = above[-1][1] if above else self.app.listbox.focus_position
+        self.assertGreater(first_visible, 0, "need a note above the fold")
+        self.assertIsNone(self.app._offset_of(first_visible - 1, size),
+                          "the note we step onto should start off screen")
+        widget = self.open_at(first_visible)
+        widget._edit.edit_pos = 0
+        widget.keypress((SIZE[0],), "up")
+        self.app.frame.render(SIZE, True)
+        self.assertEqual(self.app.listbox.focus_position, first_visible - 1)
+        self.assertIsNotNone(
+            self.app._offset_of(first_visible - 1, self.app.frame.body_size),
+            "and it should have been brought into view")
+        self.assertNotEqual(self.screen(), self.anchor,
+                            "the page had to move, and did")

@@ -671,6 +671,34 @@ class Inkwell:
         except Exception:                   # noqa: BLE001
             pass
 
+    def _offset_of(self, position: int, size):
+        """The row the note at `position` starts on, or None if it is off screen.
+
+        urwid will say where the *focused* note sits; the rest have to be
+        counted off from it, upwards through what is above and downwards
+        through what is below.
+        """
+        try:
+            middle, top, bottom = self.listbox.calculate_visible(size, True)
+        except Exception:                   # noqa: BLE001 - never break a redraw
+            return None
+        if middle is None:
+            return None
+        offset, _widget, focus_position, focus_rows = middle[:4]
+        if position == focus_position:
+            return offset
+        row = offset
+        for _widget, at, rows in top[1]:            # upwards, nearest first
+            row -= rows
+            if at == position:
+                return row
+        row = offset + focus_rows
+        for _widget, at, rows in bottom[1]:         # downwards, nearest first
+            if at == position:
+                return row
+            row += rows
+        return None
+
     @contextlib.contextmanager
     def holding_the_view(self):
         """Do something to the document without scrolling the reader away."""
@@ -752,6 +780,15 @@ class Inkwell:
         size = self.frame.body_size
         if size is None:
             self.listbox.set_focus(target)
+            return
+        # Land on the next note without moving the page. change_focus() takes
+        # the offset to put it at and defaults to 0 -- the top of the body --
+        # so asking for the note above scrolled the whole document up under
+        # the reader. When it is already on screen it belongs where it is;
+        # only a note off the edge is worth scrolling to.
+        offset = self._offset_of(target, size)
+        if offset is not None:
+            self.listbox.change_focus(size, target, offset)
             return
         self.listbox.change_focus(size, target,
                                   coming_from="below" if direction < 0 else "above")
