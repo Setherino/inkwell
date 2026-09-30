@@ -6,6 +6,26 @@ Notable changes, newest first. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **shift+enter files an open box, and ticks a checkbox in the page.** The
+  same gesture for "I am done with this": in an open note it does what the
+  `✓` button does, and on a checkbox it toggles it as space already did.
+  Enter stays a line break, because a note is prose first and a cell second.
+- Shift+enter is not a key a terminal sends by default -- the usual answer
+  to it is a bare CR, which is what Enter sends, so nothing can tell the two
+  apart. The terminals that *can* say it use `CSI 13;2u` (kitty, WezTerm,
+  ghostty, newer iTerm2) or `CSI 27;2;13~` (xterm modifyOtherKeys), and
+  urwid 4 decodes neither, so `app.teach_shift_enter` registers both. It has
+  to register them on *every* trie it can reach: urwid hands out two
+  different module objects for the single `urwid.display.escape` entry in
+  `sys.modules`, and the `process_keyqueue` you get by importing it is not
+  the one the screen's parser calls. Teaching only the imported one passes a
+  unit test and does nothing in a real terminal -- `tools/drive.py
+  --shift-enter` is what caught that, by sending the raw bytes down a pty.
+- `shift enter` was already named in the editing keymap as an alias for the
+  line break. It had never once fired, because nothing decoded it.
+
 ### Fixed
 
 - **An equation broken across two source lines was demoted to prose**, and

@@ -330,7 +330,7 @@ own first characters (and two leading spaces per level nests it).
 | plain prose | a paragraph, wrapped in a 78-column measure |
 | `is entropy extensive?` | an open question, kept in a `?` gutter |
 | `- item` / `* item` / `1. item` / `(a) item` | list items; runs pack tight and count on from the number you typed, past their own sub-items |
-| `TODO x` / `- [ ] x` / `- [x] x` | a checkbox; space toggles it |
+| `TODO x` / `- [ ] x` / `- [x] x` | a checkbox; space or shift+enter toggles it |
 | `fin pitch: 0.4mm` | a pair — key column, dot leaders, value column |
 | `entropy :: what it means` | a definition: bold term, em dash, hanging indent |
 | `engine \| T_h \| efficiency` | a table row; the run shares its columns |
@@ -411,13 +411,32 @@ Along the bottom of the halo sit three buttons, five columns each:
 | | |
 | --- | --- |
 | **⏎** (or Enter, or `f1`) | a line break, right where the cursor is |
-| **✓** (or `f12`, or `esc`) | done — keep it and close |
+| **✓** (or `f12`, or `esc`, or shift+enter) | done — keep it and close |
 | **✕** | throw this edit away and put the note back as it was |
 
 **Enter is a line break**, not a way out: one `⏎` is a new line inside the
 block, two — a blank line — is where the note becomes two notes when you
 finish it. Starting a new block inside a list keeps you in the list, so
 Enter twice in `- perforated alu` gives you a second bullet.
+
+**Shift+enter is the way out**: it files the box the way `✓` does, and on a
+checkbox in the page it ticks it.
+
+That last one asks something of the terminal. Shift+enter is not a key a
+terminal sends by default — the usual answer to it is a bare carriage
+return, which is exactly what Enter sends, so nothing can tell them apart.
+A terminal that *can* say it does so with an escape sequence (`CSI 13;2u` in
+kitty, WezTerm, ghostty and newer iTerm2; `CSI 27;2;13~` from xterm's
+modifyOtherKeys), and urwid decodes neither on its own, so inkwell teaches
+it both. To find out what yours sends, press the key at:
+
+    python3 -c "import sys,tty,termios,os;f=sys.stdin.fileno();o=termios.tcgetattr(f);tty.setraw(f);d=os.read(f,16);termios.tcsetattr(f,termios.TCSADRAIN,o);print(repr(d))"
+
+`b'\r'` means the terminal cannot say it and shift+enter will act as Enter;
+`b'\x1b[13;2u'` means it can. Apple's Terminal.app is in the first group, but
+it will send whatever you like: Settings → Profiles → Keyboard → **+**,
+shift-↩, *Send Text*, and type the escape sequence. `esc` and `f12` file a
+box on every terminal regardless.
 
 **Arrows move about.** Inside an open note they move the cursor; walk off
 the top or bottom line and the note closes and you step to the note above or
@@ -492,7 +511,7 @@ first. `--no-llm` turns it off.
 
 ## Tests
 
-    python3 -m unittest discover -s tests -t .    # 730 tests, stdlib only
+    python3 -m unittest discover -s tests -t .    # 759 tests, stdlib only
 
 `tests/test_lecture.py` is the end-to-end one: a student's 58 jotted notes
 from a thermodynamics lecture (fragments, run-ons, LaTeX, a table, a

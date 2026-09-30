@@ -194,3 +194,92 @@ class JoinTests(Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShiftEnterConfirms(Fixture):
+    """shift+enter is the "I am done with this" key.
+
+    In an open box it files the contents, exactly as the ✓ button does; on a
+    checkbox in the page it ticks the box. Plain Enter stays a line break,
+    because a note is prose first and a cell second.
+    """
+
+    def test_it_files_an_open_box(self):
+        self.app.commit("a thought")
+        widget = self.open_at(0, len("a thought"))
+        for character in " more":
+            widget.keypress((80,), character)
+        widget.keypress((80,), "shift enter")
+        self.assertFalse(widget.editing, "the box closed")
+        self.assertEqual(self.texts(), ["a thought more"])
+
+    def test_it_keeps_what_was_typed_like_the_tick_does(self):
+        self.app.commit("first")
+        one = self.open_at(0, len("first"))
+        one.keypress((80,), "shift enter")
+        self.app.commit("second")
+        two = self.open_at(1, len("second"))
+        two.keypress((80,), "f12")
+        self.assertEqual(self.texts(), ["first", "second"])
+
+    def test_enter_is_still_a_line_break(self):
+        self.app.commit("first line")
+        widget = self.open_at(0, len("first line"))
+        widget.keypress((80,), "enter")
+        self.assertTrue(widget.editing, "enter must not close the box")
+        self.assertEqual(widget._edit.edit_text, "first line\n")
+
+    def test_it_ticks_a_checkbox_in_the_page(self):
+        self.app.commit("TODO email the vendor")
+        widget = self.focus(0)
+        self.assertFalse(widget.note.done)
+        widget.keypress((80,), "shift enter")
+        self.assertTrue(widget.note.done)
+
+    def test_it_unticks_one_that_is_already_ticked(self):
+        self.app.commit("TODO email the vendor")
+        widget = self.focus(0)
+        widget.keypress((80,), "shift enter")
+        widget.keypress((80,), "shift enter")
+        self.assertFalse(widget.note.done)
+
+    def test_it_does_not_tick_a_note_that_is_not_a_checkbox(self):
+        self.app.commit("just prose")
+        widget = self.focus(0)
+        widget.keypress((80,), "shift enter")
+        self.assertFalse(widget.note.done)
+
+
+class TheTerminalCanSayShiftEnter(unittest.TestCase):
+    """Most terminals send a bare CR for shift+enter, indistinguishable from
+    Enter. The ones that can say it use a CSI-u or modifyOtherKeys sequence,
+    and urwid 4 decodes neither on its own, so inkwell teaches it both.
+    """
+
+    KITTY = [27, 91, 49, 51, 59, 50, 117]              # CSI 13;2u
+    XTERM = [27, 91, 50, 55, 59, 50, 59, 49, 51, 126]  # CSI 27;2;13~
+
+    def decode(self, codes):
+        from urwid.display.escape import process_keyqueue
+        return process_keyqueue(codes, more_available=False)[0]
+
+    def setUp(self):
+        from inkwell import app
+        app.teach_shift_enter()
+
+    def test_both_forms_arrive_as_shift_enter(self):
+        self.assertEqual(self.decode(self.KITTY), ["shift enter"])
+        self.assertEqual(self.decode(self.XTERM), ["shift enter"])
+
+    def test_teaching_it_twice_is_harmless(self):
+        from inkwell import app
+        app.teach_shift_enter()
+        self.assertEqual(self.decode(self.KITTY), ["shift enter"])
+
+    def test_nothing_else_was_shadowed(self):
+        for codes, expected in (([13], "enter"), ([27, 13], "meta enter"),
+                                ([27, 91, 65], "up"), ([27, 79, 80], "f1"),
+                                ([27, 91, 90], "shift tab"),
+                                ([27, 91, 49, 126], "home"),
+                                ([27, 91, 49, 53, 126], "f5")):
+            self.assertEqual(self.decode(codes), [expected], codes)

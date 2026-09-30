@@ -423,7 +423,7 @@ class NoteWidget(urwid.Widget):
                 self.stop_edit()
                 self.start_pane_edit(target)
                 return None
-            if key == "enter" and self._pane is not None:
+            if key in ("enter", "shift enter") and self._pane is not None:
                 self.stop_edit()
                 self._emit("changed")
                 self._emit("leave")
@@ -438,10 +438,10 @@ class NoteWidget(urwid.Widget):
                 self.stop_edit()        # off the end: step to the next note
                 self._emit("step", -1 if key == "up" else 1)
                 return None
-            if key in ("f1", "meta enter", "shift enter"):
+            if key in ("f1", "meta enter"):
                 self.insert_break()      # ...the ⏎ button's key
                 return None
-            if key == "f12":
+            if key in ("f12", "shift enter"):
                 return self.press("done") and None
             if self._edit.selection() and key in ("backspace", "delete"):
                 return self._compose(maxcol, True).keypress((maxcol,), key)
@@ -460,7 +460,7 @@ class NoteWidget(urwid.Widget):
             self.start_edit()
             return None
         block = self.block
-        if key == " " and block is not None and block.kind == S.CHECK:
+        if key in (" ", "shift enter") and block is not None and block.kind == S.CHECK:
             self.note.done = not self.note.done
             self._built = None
             self._invalidate()

@@ -400,6 +400,81 @@ def escape_scenario():
     return 0 if (ok and not boom and code == 0) else 1
 
 
+def shift_enter_scenario():
+    r"""shift+enter files an open box, and ticks a checkbox in the page.
+
+    The point of driving this through a pty is that the key has to survive
+    the whole trip: the terminal emits an escape sequence, urwid decodes it,
+    and only then does a widget see "shift enter". A unit test that calls
+    keypress() with that string proves the last step and none of the first
+    two -- and urwid 4 does not decode either sequence until inkwell teaches
+    it to, so the first two are exactly where this breaks.
+
+    Both forms are sent: CSI 13;2u is what kitty, WezTerm, ghostty and newer
+    iTerm2 emit; CSI 27;2;13~ is xterm's modifyOtherKeys. A terminal that can
+    say neither sends a bare CR, which is Enter, and nothing here applies.
+    """
+    import tempfile
+    sys.path.insert(0, ROOT)
+    from inkwell import store
+    KITTY = b"\x1b[13;2u"
+    XTERM = b"\x1b[27;2;13~"
+    folder = tempfile.mkdtemp()
+    path = os.path.join(folder, "cells.json")
+    store.save([store.Note("# Cells"),
+                store.Note("a thought to finish"),
+                store.Note("TODO email the vendor")], path)
+    d = Driver([sys.executable, "-m", "inkwell", "--theme", "dark", "--no-llm",
+                "--file", path], cols=86, rows=20, env={"INKWELL_DIR": folder})
+    d.pump(1.2)
+
+    ok = True
+
+    def check(label, condition):
+        nonlocal ok
+        print(("PASS " if condition else "FAIL ") + label)
+        ok &= bool(condition)
+
+    def editing() -> bool:
+        return any("✎" in line for line in d.screen.text())
+
+    def ticked() -> bool:
+        return any("☑" in line or "☒" in line for line in d.screen.text())
+
+    # Up twice: past the checkbox, onto the paragraph. Open it and type.
+    d.key(b"\x1b[A", wait=0.4)
+    d.key(b"\x1b[A", wait=0.4)
+    d.key(b"\r", wait=0.4)
+    check("enter opened the box", editing())
+    d.send(" and a bit more", pause=0.02)
+    d.screen.show("an open box, mid-edit")
+
+    d.key(KITTY, wait=0.6)
+    check("CSI 13;2u closed the box", not editing())
+    d.screen.show("after shift+enter")
+
+    kept = [note.text for note in store.load(path)]
+    check("it kept what was typed",
+          "a thought to finish and a bit more" in kept)
+
+    # Down onto the checkbox, and tick it with the other form.
+    d.key(b"\x1b[B", wait=0.4)
+    check("the checkbox starts unticked", not ticked())
+    d.key(XTERM, wait=0.6)
+    check("CSI 27;2;13~ ticked the checkbox", ticked())
+    d.screen.show("after shift+enter on a checkbox")
+
+    d.key(XTERM, wait=0.6)
+    check("...and again unticks it", not ticked())
+
+    code = d.close()
+    boom = d.crashed()
+    print("\nexit code:", code)
+    if boom:
+        print("CRASHED:\n" + boom)
+    return 0 if (ok and not boom and code == 0) else 1
+
+
 def shelf_scenario():
     """Two books in one folder: pick one, read it, esc back out through both.
 
@@ -536,6 +611,8 @@ if __name__ == "__main__":
         sys.exit(library_scenario())
     if "--escape" in sys.argv:
         sys.exit(escape_scenario())
+    if "--shift-enter" in sys.argv:
+        sys.exit(shift_enter_scenario())
     if "--shelf" in sys.argv:
         sys.exit(shelf_scenario())
     sys.exit(click_scenario() if "--clicks" in sys.argv else scenario())

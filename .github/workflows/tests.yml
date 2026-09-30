@@ -42,6 +42,8 @@ jobs:
         run: python tools/drive.py --escape
       - name: a shelf of books
         run: python tools/drive.py --shelf
+      - name: shift+enter files a box and ticks a checkbox
+        run: python tools/drive.py --shift-enter
       - name: type a document and re-lay it
         run: python tools/drive.py
       - name: click in, click off

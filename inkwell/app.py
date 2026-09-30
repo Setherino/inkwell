@@ -46,6 +46,57 @@ COMPOSER = 2        # the box at the bottom
 PAGE = 3            # a note has the cursor bar; arrows scroll
 EDITING = 4         # an open box -- the halo, or one of its panes
 
+# Shift+Enter is not a key a terminal sends by default: the usual answer is a
+# bare CR, which is indistinguishable from Enter. A terminal that can tell the
+# two apart says so with a CSI-u sequence (kitty, WezTerm, ghostty, newer
+# iTerm2) or xterm's modifyOtherKeys form, and urwid 4 decodes neither.
+SHIFT_ENTER = ("[13;2u", "[27;2;13~")
+
+
+def _key_tries() -> list:
+    """Every sequence trie urwid might decode this terminal's input with.
+
+    There is meant to be one. In urwid 4.0.8 ``urwid.display.escape`` hands
+    out two different module objects for the single ``sys.modules`` entry, so
+    the ``process_keyqueue`` you get by importing it is not the one the
+    screen's parser calls, and they own separate tries. Teaching the wrong
+    one looks like it worked -- ``trie.get`` finds the sequence afterwards --
+    while the app goes on seeing "meta [". So teach all of them.
+    """
+    found: list = []
+
+    def remember(trie) -> None:
+        if trie is not None and not any(trie is seen for seen in found):
+            found.append(trie)
+
+    try:
+        from urwid.display.escape import process_keyqueue
+        remember(process_keyqueue.__globals__.get("input_trie"))
+    except Exception:                   # noqa: BLE001 - some other urwid
+        pass
+    try:
+        from urwid import raw_display
+        escape = raw_display.Screen.parse_input.__globals__.get("escape")
+        remember(getattr(escape, "input_trie", None))
+    except Exception:                   # noqa: BLE001
+        pass
+    for module in list(sys.modules.values()):
+        remember(getattr(module, "input_trie", None))
+    return found
+
+
+def teach_shift_enter() -> None:
+    """Teach urwid the sequences a terminal sends for shift+enter."""
+    for trie in _key_tries():
+        for sequence in SHIFT_ENTER:
+            codes = [ord(character) for character in sequence]
+            try:
+                if trie.get(codes, False) is None:
+                    trie.add(trie.data, sequence, "shift enter")
+            except Exception:           # noqa: BLE001 - a trie conflict
+                pass
+
+
 class _Screen(urwid.raw_display.Screen):
     """A screen that keeps the editing keys for editing.
 
@@ -931,6 +982,7 @@ class Inkwell:
 
     # --- run --------------------------------------------------------------
     def _make_loop(self) -> urwid.MainLoop:
+        teach_shift_enter()
         screen = _Screen()
         try:
             screen.set_terminal_properties(colors=256)
