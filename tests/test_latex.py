@@ -446,6 +446,7 @@ class SourceCharacters(unittest.TestCase):
 
     def test_everything_that_survives_can_be_drawn(self):
         from inkwell.sfnt import Face
-        face = Face("/System/Library/Fonts/Menlo.ttc", 0)
+        from . import helpers
+        face = Face(*helpers.a_monospace_face())
         for ch in L.inline("P(x∣y) and ∥v∥"):
             self.assertTrue(face.has(ch), f"U+{ord(ch):04X} {ch!r} has no glyph")

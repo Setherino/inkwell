@@ -21,3 +21,18 @@ def retype(widget, text):
     widget._edit.set_edit_text(text)
     widget._edit.edit_pos = len(text)
     return widget
+
+
+def a_monospace_face():
+    """(path, index) of the face `pdf.export` will actually draw with here.
+
+    The PDF tests inspect glyph ids, so they have to ask the same face the
+    exporter picked -- Menlo on a Mac, DejaVu or Liberation on Linux. Reading
+    ids out of a hardcoded Menlo was both unportable and, off a Mac, wrong.
+    """
+    import unittest
+    from inkwell import pdf
+    try:
+        return pdf.fonts()["regular"]
+    except pdf.NoFont:
+        raise unittest.SkipTest("no monospace TrueType font on this machine")

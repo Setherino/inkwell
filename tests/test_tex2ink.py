@@ -107,7 +107,8 @@ class Prose(unittest.TestCase):
 
     def test_every_character_the_converter_emits_can_be_drawn(self):
         from inkwell.sfnt import Face
-        face = Face("/System/Library/Fonts/Menlo.ttc", 0)
+        from . import helpers
+        face = Face(*helpers.a_monospace_face())
         made = tex2ink.notes(r"""
 The norm $\|x\|$ and $|y|$ agree.
 \begin{tabular}{ll}

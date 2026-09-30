@@ -7,11 +7,19 @@ import unittest
 import zlib
 from pathlib import Path
 
-from . import helpers  # noqa: F401
+from . import helpers
 from inkwell import pdf, store
 from inkwell.app import Inkwell
 from inkwell.sfnt import Face
 
+# The face the exporter will actually draw with on this machine. These tests
+# read glyph ids straight out of the written PDF, so they have to ask the
+# same face `pdf.export` picked, not a hardcoded Menlo.
+REGULAR = helpers.a_monospace_face()
+
+# A few assertions below are about Menlo in particular -- its face names, its
+# advance width -- and can only run where Menlo is.
+HAVE_MENLO = Path(pdf.FONT).exists()
 MENLO = Path(pdf.FONT)
 
 
@@ -39,8 +47,9 @@ def streams(raw: bytes) -> str:
 
 class FaceTests(unittest.TestCase):
     def setUp(self):
-        self.face = Face(MENLO, 0)
+        self.face = Face(*REGULAR)
 
+    @unittest.skipUnless(HAVE_MENLO, "Menlo is a Mac font")
     def test_it_reads_the_face_we_asked_for(self):
         self.assertEqual(Face(MENLO, 0).name, "Menlo-Regular")
         self.assertEqual(Face(MENLO, 1).name, "Menlo-Bold")
@@ -56,8 +65,11 @@ class FaceTests(unittest.TestCase):
         self.assertFalse(self.face.has("🎉"))
 
     def test_widths_are_in_pdf_units_and_monospace(self):
-        for character in "AWil.":
-            self.assertEqual(self.face.width(self.face.glyph(character)), 602)
+        # Every face is monospace; 602 is Menlo's own advance.
+        widths = {self.face.width(self.face.glyph(c)) for c in "AWil."}
+        self.assertEqual(len(widths), 1)
+        if HAVE_MENLO and Path(REGULAR[0]) == MENLO:
+            self.assertEqual(widths.pop(), 602)
 
     def test_a_face_from_a_collection_becomes_its_own_font_file(self):
         solo = self.face.standalone()
@@ -73,8 +85,18 @@ class FaceTests(unittest.TestCase):
                          self.face.glyph("A"))
 
     def test_block_characters_report_their_real_height(self):
-        self.assertAlmostEqual(self.face.outline_height("█"), 1.0195, places=3)
-        self.assertAlmostEqual(self.face.outline_height("▀"), 0.5098, places=3)
+        # The point is that the height comes from the glyph outline rather
+        # than being guessed from the em: a full block overshoots the em box,
+        # and a half block is about half of it. The exact figures are the
+        # face's own -- Menlo 1.0195, DejaVu 1.1880, Liberation 1.1328 -- so
+        # only the shape of the answer is portable.
+        full = self.face.outline_height("█")
+        half = self.face.outline_height("▀")
+        self.assertGreater(full, 1.0)
+        self.assertTrue(0.4 < half / full < 0.6, f"{half} is not half of {full}")
+        if HAVE_MENLO and Path(REGULAR[0]) == MENLO:
+            self.assertAlmostEqual(full, 1.0195, places=3)
+            self.assertAlmostEqual(half, 0.5098, places=3)
 
 
 class FileTests(unittest.TestCase):
@@ -114,7 +136,7 @@ class FileTests(unittest.TestCase):
     def test_the_words_are_in_the_file_as_glyphs(self):
         path = out()
         pdf.export(notes("hello there."), path)
-        face = Face(MENLO, 0)
+        face = Face(*REGULAR)
         wanted = "".join(f"{face.glyph(c):04X}" for c in "hello")
         self.assertIn(wanted, streams(path.read_bytes()))
 
@@ -209,7 +231,7 @@ class RenderTests(unittest.TestCase):
         path = out()
         report = pdf.export(notes("party time 🎉"), path)
         self.assertIn("🎉", report["undrawable"])
-        face = Face(MENLO, 0)
+        face = Face(*REGULAR)
         self.assertNotIn(f"{face.glyph('🎉'):04X}", streams(path.read_bytes()))
 
     def test_a_note_is_kept_whole_on_one_page_when_it_fits(self):
@@ -223,7 +245,7 @@ class RenderTests(unittest.TestCase):
     def test_the_page_number_is_on_every_page(self):
         path = out()
         report = pdf.export(notes(*[f"note {i}." for i in range(200)]), path)
-        face = Face(MENLO, 0)
+        face = Face(*REGULAR)
         text = streams(path.read_bytes())
         for number in range(1, report["pages"] + 1):
             wanted = "".join(f"{face.glyph(c):04X}" for c in str(number))
