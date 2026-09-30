@@ -7,7 +7,7 @@
 A terminal notebook that formats itself. You type into the box at the
 bottom; when a thought ends it drops into the page above and is laid out as
 part of a document — nested lists, aligned columns, definitions, tables,
-side-by-side panes, typeset maths. Resize the window and the whole page
+side-by-side panes, typeset math. Resize the window and the whole page
 re-lays: nothing about a note's appearance is stored.
 
 Nothing leaves your machine: notes are JSON files in a folder you can see,
@@ -69,284 +69,6 @@ whole lecture's 58 notes and prints the page this opens.
     inkwell --no-llm            # markup only, no network
     inkwell --ascii             # no unicode letterforms
 
-### Install
-
-One dependency — [urwid](https://urwid.org) — and Python 3.9 or newer.
-Everything else is stdlib on purpose: the PDF writer, the TrueType parser,
-the LaTeX typesetter and the clipboard.
-
-    python3 -m pip install git+https://github.com/Setherino/inkwell
-
-Or run it straight from a checkout. `bin/inkwell` follows symlinks, so it
-works from anywhere on `$PATH`:
-
-    python3 -m pip install --user urwid
-    ln -s "$PWD/bin/inkwell" ~/.local/bin/inkwell
-
-macOS and Linux are tested (3.9 and 3.13, in CI). Windows has not been
-tried — see *Books* for what that rests on.
-
-| | |
-| --- | --- |
-| [docs/architecture.md](docs/architecture.md) | the code, and which decisions are load bearing |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | how to work on it |
-| [CHANGELOG.md](CHANGELOG.md) | what changed |
-| [LICENSE](LICENSE) | MIT |
-
-## Notebooks
-
-Notes live in **`~/Documents/Inkwell`** — one JSON file per notebook,
-somewhere you would actually look for them. `$INKWELL_DIR` puts them
-somewhere else. `f2` opens the folder:
-
-    ┌────────────── ~/Documents/Inkwell ───────────────┐
-    │   notes                       9 notes    21:24   │
-    │   hw0                         3 notes    21:24   │
-    │ ▸ thermo 3                    3 notes    21:24   │
-    │ ──────────────────────────────────────────────── │
-    │   new: lecture 4                                 │
-    └──────────────────────────────────────────────────┘
-
-Arrows and Enter to open one (or click it); type a name in **new:** to start
-one. The dialog opens on the notebook you are in, `▸` marks it, and whatever
-you had open is saved before the swap.
-
-Nothing is ever imported from another folder, and a notebook is never
-written over blind: if the file changed on disk since this session read it
-— an old window left open somewhere — the save goes to
-`<notebook>-conflict-HHMMSS.json` beside it and the status line says so.
-Two copies of the same notes is how you end up editing the wrong one.
-
-## Esc goes up
-
-The interface is a tree whether anyone writes it down or not, so it is
-written down:
-
-    0  the shelf                   which book (the reader only)
-    1  the folder of notebooks     f2 — the reader puts a book's contents here
-    2  the box at the bottom       where a thought gets typed
-    3  the page                    a note has the cursor bar; arrows scroll
-    4  an open box                 the halo, or one of its panes
-
-`esc` is **one step up that tree, from wherever you are** — and it is the
-same key the whole way, so there is never anything to remember about which
-level you are on:
-
-    [open box] ─esc→ [page] ─esc→ [box at the bottom] ─esc→ [folder]
-
-A tree can be taller in one app than another. The reader adds the shelf
-above a book's contents, and the same key walks back out through both:
-
-    ... ─esc→ [box at the bottom] ─esc→ [contents] ─esc→ [shelf]
-
-Going up keeps your work: leaving an open box files what it says, exactly
-as **✓** does. Throwing an edit away is the **✕** button, deliberately not
-a key you can hit by accident.
-
-Two consequences worth stating, because they are decisions rather than
-accidents:
-
-- **A picked run of notes, a selection inside a box and a filter typed into
-  the contents do not get rungs of their own.** They decorate a level
-  rather than being one, so they go when you leave the level they belong to
-  — nothing in the app takes two presses of `esc` to get out of. (Backspace
-  still clears the contents filter in place, which is what you want while
-  you are searching.)
-- **The folder remembers what it covered.** `esc` at the top steps it aside
-  and puts the cursor back on the level it was hiding, so `esc` `esc` from
-  the box at the bottom is a round trip rather than a way of ending up
-  somewhere deeper than you started.
-
-No widget decides what "up" means from where it sits — a note cannot know
-what is above it. They hand `esc` back, it reaches `Inkwell.ascend`, and
-that one method is the whole ladder. `inkwell/app.py` carries the levels as
-`ROOT`…`EDITING`; `tests/test_escape.py` asserts the rungs, and that `esc`
-strictly ascends from every one of them.
-
-## Light and dark
-
-Two palettes, chosen at startup from `$INKWELL_THEME`, then `$COLORFGBG`,
-then an OSC 11 query asking the terminal what colour it is — and `f5` flips
-between them live. They are built to measured contrast rather than by eye:
-`inkwell/theme.py` carries the WCAG maths, and the tests assert that body
-text clears 7:1 against its background in both themes and that even the
-quiet things (rules, timestamps, dot leaders) clear 3:1.
-
-## How it decides you're done
-
-- a sentence terminator followed by a space files the sentence
-- Enter files whatever is in the box (splitting it into sentences)
-- three seconds of quiet files it too
-
-Abbreviations (`e.g.`, `Dr.`), initials (`Seth J.`), trailing `...`,
-decimals (`0.4mm`), versions (`v1.2`) and list numbers (`3. `) are not
-sentence endings, so you can type through them.
-
-## The kinds of box
-
-Every note is an editable text box; what *kind* of box it is comes from its
-own first characters (and two leading spaces per level nests it).
-
-| what you type | what you get |
-| --- | --- |
-| `# Thermo 3` | the document title, set large |
-| `## The second law` | a section: small caps and a rule across the page |
-| `### details` or `Open questions:` | a heading |
-| plain prose | a paragraph, wrapped in a 78-column measure |
-| `is entropy extensive?` | an open question, kept in a `?` gutter |
-| `- item` / `* item` / `1. item` / `(a) item` | list items; runs pack tight and count on from the number you typed, past their own sub-items |
-| `TODO x` / `- [ ] x` / `- [x] x` | a checkbox; space toggles it |
-| `fin pitch: 0.4mm` | a pair — key column, dot leaders, value column |
-| `entropy :: what it means` | a definition: bold term, em dash, hanging indent |
-| `engine \| T_h \| efficiency` | a table row; the run shares its columns |
-| `> borrowed words` | a quotation |
-| `` `some/path.py` `` | verbatim — spacing kept, never re-wrapped; a run of lines is one block |
-| `!on the midterm` | a callout |
-| `$$S = k_B \ln \Omega$$` | display maths, typeset and centred |
-| `$\Delta S \geq 0$` inline | typeset inside the sentence |
-| `left \|\| right` | **panes**: boxes side by side |
-| `{2} wide \|\| narrow` | panes with weights |
-| `---` | a divider |
-
-Inline `**bold**`, `_italic_` and `` `code` `` work anywhere.
-
-## Maths
-
-`inkwell/latex.py` is a small LaTeX typesetter built on a box model — every
-fragment is some lines plus a baseline, glued together with baselines
-aligned — so it can stack:
-
-    $$\Delta S = \int_{T_1}^{T_2} \frac{C_p}{T} dT$$
-
-                        T₂  Cₚ
-                 ΔS = ∫  ──── dT
-                        T₁  T
-
-Fractions stack over a rule, `\sum`/`\int` carry their limits above and
-below, `\sqrt` gets a radical rule, `\begin{bmatrix}` comes out square and
-bracketed however tall its cells are. Inside a matrix a fraction stays on
-its own line at full size (`2/3`) rather than stacking — a three-row cell
-would drag the grid apart — and the precomposed glyphs (`⅔`) are kept for
-inline prose, where they read well and a display-size letter is not sitting
-next to them. Inline maths is forced onto one line instead (unicode
-super/subscripts, `½`, `ⁿ⁄₂`, `[a b; c d]`), because prose has to keep
-flowing. Greek, ~120 symbols, `\mathbb`/`\mathcal`, accents (`\vec{F}` →
-`F⃗`), `\text{}` and the usual functions are supported; anything it cannot
-read is passed through exactly as typed rather than mangled.
-
-## Formatting across notes
-
-The formatter looks at the notes *together*, which is what makes the page a
-document rather than a list of styled strings: nesting with depth-matched
-markers, tight runs, renumbered lists, shared key and value columns with dot
-leaders, table columns shared across a run, pane dividers aligned into a
-grid, hanging indents, and one spacing model (a blank line between blocks,
-two above a section, none inside a run — gaps can never stack up).
-
-All of it is recomputed per width. Nesting costs 2 columns wide, 1 below 50,
-0 below 30. A pair table keeps its size until squeezed, then shortens its
-leaders, and stacks only when two columns genuinely will not fit — as a whole
-run, so a table never goes ragged. Panes stack vertically rather than squeeze
-below 14 columns each. Prose stops widening at 78 columns and then centres.
-Timestamps appear in a right gutter past 74 columns, once per minute.
-
-Type size is a single accent: the title gets a block font when there is room
-(preferring one line in a smaller font over two in a bigger one), and inline
-markup borrows unicode letterforms. `f7` turns the title font off, `f9` the
-letterforms.
-
-## Editing
-
-Click a note to open it. It becomes a real `urwid.Edit` with a cursor where
-you clicked, wrapped in a character of blue on every side — deep blue on a
-dark terminal, light blue on a light one. The halo says which box is open,
-and it is part of the target: clicking it puts the cursor at the nearest
-point in the text rather than doing nothing.
-
-Along the bottom of the halo sit three buttons, five columns each:
-
-| | |
-| --- | --- |
-| **⏎** (or Enter, or `f1`) | a line break, right where the cursor is |
-| **✓** (or `f12`, or `esc`) | done — keep it and close |
-| **✕** | throw this edit away and put the note back as it was |
-
-**Enter is a line break**, not a way out: one `⏎` is a new line inside the
-block, two — a blank line — is where the note becomes two notes when you
-finish it. Starting a new block inside a list keeps you in the list, so
-Enter twice in `- perforated alu` gives you a second bullet.
-
-**Arrows move about.** Inside an open note they move the cursor; walk off
-the top or bottom line and the note closes and you step to the note above or
-below. In the page they move from note to note, and Enter (or just typing)
-opens the one you are on.
-
-**Finishing a note leaves you in the page**, among the notes, rather than
-jumping the cursor back down to the composer. Getting back down there is
-`esc`'s job, not Enter's — see *Esc goes up* above.
-
-| | |
-| --- | --- |
-| Backspace at the start | join with the note above (its marker is dropped) |
-| Delete at the end | pull the next note up into this one |
-| `f6` | join the focused note upwards without opening it |
-| `f4` | **split across**: turn the box into side-by-side panes |
-| `f3` | fold the panes back into one box |
-| click a pane | edit that pane in place, its neighbours still on screen |
-| Tab / Shift-Tab | walk the panes |
-| `f8` | delete the focused note |
-
-## The optional copy editor
-
-**Off unless you point it somewhere.** There is no default endpoint: a
-notes app should not send anything anywhere until its owner has said where.
-Give it an OpenAI-compatible `/v1` — llama.cpp, vLLM, Ollama, LM Studio, a
-hosted API — and every new note is *also* sent to it in a background thread
-with the few notes above it for context.
-
-    export INKWELL_LLM_URL=http://localhost:8080/v1
-    export INKWELL_LLM_KEY=whatever-your-endpoint-wants   # or ~/.config/inkwell/key
-    export INKWELL_LLM_MODEL=your-model-name              # optional
-    export INKWELL_LLM_EFFORT=low                         # reasoning models only
-
-It answers with formatting only — which kind of box, how deep, whether it
-continues the note above, whether a run-on should be split into separate
-items, which two halves make a pair, which phrase carries the weight. Never
-type sizes, never a title, never overruling markup you typed. When the
-answer lands the note re-formats in place:
-
-    remember to email the vendor about stock    ->  ☐ email the vendor about stock
-    lead time is about three weeks              ->  lead time ···· about three weeks
-    cut the plate then bend it then clinch it   ->  • cut the plate
-                                                   • bend it
-                                                   • clinch it
-
-Failures are silent and harmless — the page always renders from the markup
-first. `--no-llm` turns it off.
-
-## Layout
-
-    inkwell/shaping.py      text -> notes, and each note's own markup (pure)
-    inkwell/document.py     the formatter: notes -> a laid-out document (pure)
-    inkwell/latex.py        LaTeX -> terminal maths, on a box model (pure)
-    inkwell/typography.py   wrapping, inline letterforms, the title font
-    inkwell/widgets.py      the note box: display, edit, panes, split/join
-    inkwell/app.py          frame, focus, idle timer, palette, gestures
-    inkwell/muse.py         the optional copy editor
-    inkwell/clip.py         the system clipboard, with a fallback
-    inkwell/history.py      undo, with interned snapshots
-    inkwell/pdf.py          the PDF exporter
-    inkwell/sfnt.py         just enough TrueType to embed a font
-    inkwell/store.py        the notebooks folder and its JSON files
-    inkwell/theme.py        the two palettes, contrast maths, terminal sniffing
-    inkwell/reader.py       books: the shelf, a contents, search
-    tools/lecture.py        types a whole lecture and prints the page
-    tools/drive.py          runs the app in a real pty and prints the screen
-    tools/tex2hw.py         one LaTeX document -> one notebook
-    tools/tex2ink.py        a LaTeX book -> one notebook per chapter
-    tools/build_reader.py   packs the reader and a book into one .pyz
-    tools/smoke_reader.py   drives a built archive, end to end
-
 ## A homework sheet
 
 A problem set arrives as one `.tex` file, and the point of putting it in a
@@ -355,7 +77,7 @@ notebook is that the questions and your working end up in the same place:
     python3 tools/tex2hw.py ~/Downloads/HW2/HW2.tex --student "Your Name"
     inkwell HW2
 
-Every question comes across as it was set — the maths typeset, the lists
+Every question comes across as it was set — the math typeset, the lists
 numbered, the tables square — and the blank space each one leaves you to
 write in becomes `☐ solution`, a checkbox to tick as you go. The title
 block turns into the notebook's front matter: what the course is, when it
@@ -363,7 +85,7 @@ is due, and the path of the file it was built from, so a month later the
 notebook can still tell you.
 
 It reads a *whole document* — preamble, `\newcommand` macros, `\maketitle`
-— which is the shape `tools/tex2ink.py` below does not do: that one
+— which is the shape `tools/tex2ink.py` does not do: that one
 converts a book, whose chapters are already inside `\begin{document}`.
 
 ## Books
@@ -481,6 +203,292 @@ redistributing a converted copy. Everything here is the reader; each person
 converts their own from the source the publisher offers. `.gitignore` keeps
 converted notebooks and `*.pyz` out of git, and `--clone` takes the URL you
 give it rather than shipping one.
+
+## Install
+
+One dependency — [urwid](https://urwid.org) — and Python 3.9 or newer.
+Everything else is stdlib on purpose: the PDF writer, the TrueType parser,
+the LaTeX typesetter and the clipboard.
+
+    python3 -m pip install git+https://github.com/Setherino/inkwell
+
+Or run it straight from a checkout. `bin/inkwell` follows symlinks, so it
+works from anywhere on `$PATH`:
+
+    python3 -m pip install --user urwid
+    ln -s "$PWD/bin/inkwell" ~/.local/bin/inkwell
+
+macOS and Linux are tested (3.9 and 3.13, in CI). Windows has not been
+tried — see *Books* above for what that rests on.
+
+| | |
+| --- | --- |
+| [docs/architecture.md](docs/architecture.md) | the code, and which decisions are load bearing |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | how to work on it |
+| [CHANGELOG.md](CHANGELOG.md) | what changed |
+| [LICENSE](LICENSE) | MIT |
+
+## Notebooks
+
+Notes live in **`~/Documents/Inkwell`** — one JSON file per notebook,
+somewhere you would actually look for them. `$INKWELL_DIR` puts them
+somewhere else. `f2` opens the folder:
+
+    ┌────────────── ~/Documents/Inkwell ───────────────┐
+    │   notes                       9 notes    21:24   │
+    │   hw0                         3 notes    21:24   │
+    │ ▸ thermo 3                    3 notes    21:24   │
+    │ ──────────────────────────────────────────────── │
+    │   new: lecture 4                                 │
+    └──────────────────────────────────────────────────┘
+
+Arrows and Enter to open one (or click it); type a name in **new:** to start
+one. The dialog opens on the notebook you are in, `▸` marks it, and whatever
+you had open is saved before the swap.
+
+Nothing is ever imported from another folder, and a notebook is never
+written over blind: if the file changed on disk since this session read it
+— an old window left open somewhere — the save goes to
+`<notebook>-conflict-HHMMSS.json` beside it and the status line says so.
+Two copies of the same notes is how you end up editing the wrong one.
+
+## Esc goes up
+
+The interface is a tree whether anyone writes it down or not, so it is
+written down:
+
+    0  the shelf                   which book (the reader only)
+    1  the folder of notebooks     f2 — the reader puts a book's contents here
+    2  the box at the bottom       where a thought gets typed
+    3  the page                    a note has the cursor bar; arrows scroll
+    4  an open box                 the halo, or one of its panes
+
+`esc` is **one step up that tree, from wherever you are** — and it is the
+same key the whole way, so there is never anything to remember about which
+level you are on:
+
+    [open box] ─esc→ [page] ─esc→ [box at the bottom] ─esc→ [folder]
+
+A tree can be taller in one app than another. The reader adds the shelf
+above a book's contents, and the same key walks back out through both:
+
+    ... ─esc→ [box at the bottom] ─esc→ [contents] ─esc→ [shelf]
+
+Going up keeps your work: leaving an open box files what it says, exactly
+as **✓** does. Throwing an edit away is the **✕** button, deliberately not
+a key you can hit by accident.
+
+Two consequences worth stating, because they are decisions rather than
+accidents:
+
+- **A picked run of notes, a selection inside a box and a filter typed into
+  the contents do not get rungs of their own.** They decorate a level
+  rather than being one, so they go when you leave the level they belong to
+  — nothing in the app takes two presses of `esc` to get out of. (Backspace
+  still clears the contents filter in place, which is what you want while
+  you are searching.)
+- **The folder remembers what it covered.** `esc` at the top steps it aside
+  and puts the cursor back on the level it was hiding, so `esc` `esc` from
+  the box at the bottom is a round trip rather than a way of ending up
+  somewhere deeper than you started.
+
+No widget decides what "up" means from where it sits — a note cannot know
+what is above it. They hand `esc` back, it reaches `Inkwell.ascend`, and
+that one method is the whole ladder. `inkwell/app.py` carries the levels as
+`ROOT`…`EDITING`; `tests/test_escape.py` asserts the rungs, and that `esc`
+strictly ascends from every one of them.
+
+## Light and dark
+
+Two palettes, chosen at startup from `$INKWELL_THEME`, then `$COLORFGBG`,
+then an OSC 11 query asking the terminal what colour it is — and `f5` flips
+between them live. They are built to measured contrast rather than by eye:
+`inkwell/theme.py` carries the WCAG math, and the tests assert that body
+text clears 7:1 against its background in both themes and that even the
+quiet things (rules, timestamps, dot leaders) clear 3:1.
+
+## How it decides you're done
+
+- a sentence terminator followed by a space files the sentence
+- Enter files whatever is in the box (splitting it into sentences)
+- three seconds of quiet files it too
+
+Abbreviations (`e.g.`, `Dr.`), initials (`Seth J.`), trailing `...`,
+decimals (`0.4mm`), versions (`v1.2`) and list numbers (`3. `) are not
+sentence endings, so you can type through them.
+
+## The kinds of box
+
+Every note is an editable text box; what *kind* of box it is comes from its
+own first characters (and two leading spaces per level nests it).
+
+| what you type | what you get |
+| --- | --- |
+| `# Thermo 3` | the document title, set large |
+| `## The second law` | a section: small caps and a rule across the page |
+| `### details` or `Open questions:` | a heading |
+| plain prose | a paragraph, wrapped in a 78-column measure |
+| `is entropy extensive?` | an open question, kept in a `?` gutter |
+| `- item` / `* item` / `1. item` / `(a) item` | list items; runs pack tight and count on from the number you typed, past their own sub-items |
+| `TODO x` / `- [ ] x` / `- [x] x` | a checkbox; space toggles it |
+| `fin pitch: 0.4mm` | a pair — key column, dot leaders, value column |
+| `entropy :: what it means` | a definition: bold term, em dash, hanging indent |
+| `engine \| T_h \| efficiency` | a table row; the run shares its columns |
+| `> borrowed words` | a quotation |
+| `` `some/path.py` `` | verbatim — spacing kept, never re-wrapped; a run of lines is one block |
+| `!on the midterm` | a callout |
+| `$$S = k_B \ln \Omega$$` | display math, typeset and centred |
+| `$\Delta S \geq 0$` inline | typeset inside the sentence |
+| `left \|\| right` | **panes**: boxes side by side |
+| `{2} wide \|\| narrow` | panes with weights |
+| `---` | a divider |
+
+Inline `**bold**`, `_italic_` and `` `code` `` work anywhere.
+
+## Math
+
+`inkwell/latex.py` is a small LaTeX typesetter built on a box model — every
+fragment is some lines plus a baseline, glued together with baselines
+aligned — so it can stack:
+
+    $$\Delta S = \int_{T_1}^{T_2} \frac{C_p}{T} dT$$
+
+                        T₂  Cₚ
+                 ΔS = ∫  ──── dT
+                        T₁  T
+
+Fractions stack over a rule, `\sum`/`\int` carry their limits above and
+below, `\sqrt` gets a radical rule, `\begin{bmatrix}` comes out square and
+bracketed however tall its cells are. Inside a matrix a fraction stays on
+its own line at full size (`2/3`) rather than stacking — a three-row cell
+would drag the grid apart — and the precomposed glyphs (`⅔`) are kept for
+inline prose, where they read well and a display-size letter is not sitting
+next to them. Inline math is forced onto one line instead (unicode
+super/subscripts, `½`, `[a b; c d]`), because prose has to keep flowing.
+
+A fraction that has to stay on one line is only set tiny when both halves
+are plain digits — `¹∕₇`, `³∕₁₆` — because 0–9 is the one super/subscript
+range unicode draws completely and evenly, so it reads like the `½` beside
+it. A letter shrunk that far is a guess: `\frac{r}{2}` is `r/2` and
+`\frac{a+b}{2}` is `(a+b)/2`, bracketed on whichever side could be misread.
+A whole note that is nothing but a formula stacks whenever the page is wide
+enough for it, however the source wrapped its lines, and only falls back to
+the one-line form when it will not fit. Greek, ~120 symbols, `\mathbb`/`\mathcal`, accents (`\vec{F}` →
+`F⃗`), `\text{}` and the usual functions are supported; anything it cannot
+read is passed through exactly as typed rather than mangled.
+
+## Formatting across notes
+
+The formatter looks at the notes *together*, which is what makes the page a
+document rather than a list of styled strings: nesting with depth-matched
+markers, tight runs, renumbered lists, shared key and value columns with dot
+leaders, table columns shared across a run, pane dividers aligned into a
+grid, hanging indents, and one spacing model (a blank line between blocks,
+two above a section, none inside a run — gaps can never stack up).
+
+All of it is recomputed per width. Nesting costs 2 columns wide, 1 below 50,
+0 below 30. A pair table keeps its size until squeezed, then shortens its
+leaders, and stacks only when two columns genuinely will not fit — as a whole
+run, so a table never goes ragged. Panes stack vertically rather than squeeze
+below 14 columns each. Prose stops widening at 78 columns and then centres.
+Timestamps appear in a right gutter past 74 columns, once per minute.
+
+Type size is a single accent: the title gets a block font when there is room
+(preferring one line in a smaller font over two in a bigger one), and inline
+markup borrows unicode letterforms. `f7` turns the title font off, `f9` the
+letterforms.
+
+## Editing
+
+Click a note to open it. It becomes a real `urwid.Edit` with a cursor where
+you clicked, wrapped in a character of blue on every side — deep blue on a
+dark terminal, light blue on a light one. The halo says which box is open,
+and it is part of the target: clicking it puts the cursor at the nearest
+point in the text rather than doing nothing.
+
+Along the bottom of the halo sit three buttons, five columns each:
+
+| | |
+| --- | --- |
+| **⏎** (or Enter, or `f1`) | a line break, right where the cursor is |
+| **✓** (or `f12`, or `esc`) | done — keep it and close |
+| **✕** | throw this edit away and put the note back as it was |
+
+**Enter is a line break**, not a way out: one `⏎` is a new line inside the
+block, two — a blank line — is where the note becomes two notes when you
+finish it. Starting a new block inside a list keeps you in the list, so
+Enter twice in `- perforated alu` gives you a second bullet.
+
+**Arrows move about.** Inside an open note they move the cursor; walk off
+the top or bottom line and the note closes and you step to the note above or
+below. In the page they move from note to note, and Enter (or just typing)
+opens the one you are on.
+
+**Finishing a note leaves you in the page**, among the notes, rather than
+jumping the cursor back down to the composer. Getting back down there is
+`esc`'s job, not Enter's — see *Esc goes up* above.
+
+| | |
+| --- | --- |
+| Backspace at the start | join with the note above (its marker is dropped) |
+| Delete at the end | pull the next note up into this one |
+| `f6` | join the focused note upwards without opening it |
+| `f4` | **split across**: turn the box into side-by-side panes |
+| `f3` | fold the panes back into one box |
+| click a pane | edit that pane in place, its neighbours still on screen |
+| Tab / Shift-Tab | walk the panes |
+| `f8` | delete the focused note |
+
+## The optional copy editor
+
+**Off unless you point it somewhere.** There is no default endpoint: a
+notes app should not send anything anywhere until its owner has said where.
+Give it an OpenAI-compatible `/v1` — llama.cpp, vLLM, Ollama, LM Studio, a
+hosted API — and every new note is *also* sent to it in a background thread
+with the few notes above it for context.
+
+    export INKWELL_LLM_URL=http://localhost:8080/v1
+    export INKWELL_LLM_KEY=whatever-your-endpoint-wants   # or ~/.config/inkwell/key
+    export INKWELL_LLM_MODEL=your-model-name              # optional
+    export INKWELL_LLM_EFFORT=low                         # reasoning models only
+
+It answers with formatting only — which kind of box, how deep, whether it
+continues the note above, whether a run-on should be split into separate
+items, which two halves make a pair, which phrase carries the weight. Never
+type sizes, never a title, never overruling markup you typed. When the
+answer lands the note re-formats in place:
+
+    remember to email the vendor about stock    ->  ☐ email the vendor about stock
+    lead time is about three weeks              ->  lead time ···· about three weeks
+    cut the plate then bend it then clinch it   ->  • cut the plate
+                                                   • bend it
+                                                   • clinch it
+
+Failures are silent and harmless — the page always renders from the markup
+first. `--no-llm` turns it off.
+
+## Layout
+
+    inkwell/shaping.py      text -> notes, and each note's own markup (pure)
+    inkwell/document.py     the formatter: notes -> a laid-out document (pure)
+    inkwell/latex.py        LaTeX -> terminal math, on a box model (pure)
+    inkwell/typography.py   wrapping, inline letterforms, the title font
+    inkwell/widgets.py      the note box: display, edit, panes, split/join
+    inkwell/app.py          frame, focus, idle timer, palette, gestures
+    inkwell/muse.py         the optional copy editor
+    inkwell/clip.py         the system clipboard, with a fallback
+    inkwell/history.py      undo, with interned snapshots
+    inkwell/pdf.py          the PDF exporter
+    inkwell/sfnt.py         just enough TrueType to embed a font
+    inkwell/store.py        the notebooks folder and its JSON files
+    inkwell/theme.py        the two palettes, contrast math, terminal sniffing
+    inkwell/reader.py       books: the shelf, a contents, search
+    tools/lecture.py        types a whole lecture and prints the page
+    tools/drive.py          runs the app in a real pty and prints the screen
+    tools/tex2hw.py         one LaTeX document -> one notebook
+    tools/tex2ink.py        a LaTeX book -> one notebook per chapter
+    tools/build_reader.py   packs the reader and a book into one .pyz
+    tools/smoke_reader.py   drives a built archive, end to end
 
 ## Tests
 

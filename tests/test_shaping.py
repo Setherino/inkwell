@@ -132,7 +132,7 @@ if __name__ == "__main__":
 
 
 class MathsIsNotATable(unittest.TestCase):
-    """Bars in a formula are maths, not column separators.
+    """Bars in a formula are math, not column separators.
 
     ``$|y|$`` is an absolute value and ``$\\|x\\|$`` a norm; counting those
     pipes made a paragraph into a table row and a norm into panes.
@@ -154,3 +154,34 @@ class MathsIsNotATable(unittest.TestCase):
 
     def test_real_panes_still_win(self):
         self.assertEqual(S.classify("left || right").kind, S.PANES)
+
+
+class AnEquationMayWrapInTheSource(unittest.TestCase):
+    r"""A whole-note formula stays math even when the source breaks a line.
+
+    LaTeX does not care where a newline falls inside ``$...$``, but a note
+    broken over two lines was demoted to prose -- and prose sets its math
+    inline, one line, small. A homework sheet writes exactly this shape, so
+    every stacked fraction in it came out as ``r/2``.
+    """
+
+    EQUATION = ("$\\dot{x}_R = \\frac{r\\dot{\\phi}_L}{2}\n"
+                "            = \\frac{r}{2}\\left( \\dot{\\phi}_L \\right)$")
+
+    def test_a_formula_broken_over_two_lines_is_still_maths(self):
+        self.assertEqual(S.classify(self.EQUATION).kind, S.MATH)
+
+    def test_display_maths_broken_over_two_lines_is_still_maths(self):
+        self.assertEqual(S.classify("$$a =\n  b$$").kind, S.MATH)
+
+    def test_the_newline_does_not_reach_the_typesetter(self):
+        self.assertNotIn("\n", S.classify(self.EQUATION).text)
+
+    def test_the_indent_of_the_first_line_still_sets_the_level(self):
+        self.assertEqual(S.classify("  $$a =\n b$$").level, 1)
+
+    def test_maths_followed_by_prose_is_still_prose(self):
+        self.assertEqual(S.classify("$a$\nand then some words").kind, S.PARA)
+
+    def test_a_table_broken_over_two_lines_is_still_demoted(self):
+        self.assertEqual(S.classify("a | b | c\nsecond line").kind, S.PARA)

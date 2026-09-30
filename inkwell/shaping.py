@@ -23,7 +23,7 @@ KV = "kv"              # "key: value", aligned into a column with its run
 QUOTE = "quote"        # someone else's words
 CODE = "code"          # verbatim
 CALLOUT = "callout"    # something shouted
-MATH = "math"          # display maths, written as LaTeX
+MATH = "math"          # display math, written as LaTeX
 TERM = "term"          # a definition: "term :: what it means"
 TABLE = "table"        # one row of a table, written with pipes
 RULE = "rule"          # a divider
@@ -60,8 +60,8 @@ _RULE_RE = re.compile(r"^([-*_=])\1{2,}$")
 _MATH_RE = re.compile(r"^\$\$(.+?)\$\$$|^\$([^$]+)\$$", re.S)
 
 PANE_SEP = "||"
-# A maths span. Bars inside one are an absolute value or a norm, never a
-# column separator, so structure tests look at the line with maths blanked.
+# A math span. Bars inside one are an absolute value or a norm, never a
+# column separator, so structure tests look at the line with math blanked.
 MATHS_SPAN = re.compile(r"\$\$.+?\$\$|\$[^$\n]+?\$", re.S)
 
 
@@ -144,6 +144,20 @@ _ONE_LINERS = (KV, TERM, TABLE, MATH, RULE, PANES)
 def classify(raw: str) -> Shape:
     """Read one note's own markup. Structure only -- no styling decisions."""
     if "\n" in raw.rstrip():
+        # A math span is delimited, not line-based: LaTeX does not care where
+        # a newline falls between its $ signs, and whitespace inside one is
+        # insignificant. So a note that is nothing but one formula stays math
+        # however the source happened to wrap it -- only the line-based kinds
+        # below fall back to prose. Without this a homework sheet's equations
+        # were demoted to paragraphs, which set their math inline, so every
+        # stacked fraction in them came out as "r/2".
+        body = raw.rstrip()
+        whole = _MATH_RE.match(body.strip())
+        if whole:
+            lead = len(body) - len(body.lstrip(" \t"))
+            text = whole.group(1) or whole.group(2)
+            return Shape(MATH, " ".join(text.split()),
+                         min(MAX_LEVEL, lead // 2), explicit=True)
         head, rest = raw.rstrip().split("\n", 1)
         shape = classify(head)
         kind = PARA if shape.kind in _ONE_LINERS else shape.kind

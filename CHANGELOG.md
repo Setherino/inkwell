@@ -6,6 +6,37 @@ Notable changes, newest first. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **An equation broken across two source lines was demoted to prose**, and
+  prose sets its math inline -- one line, small -- so every stacked fraction
+  in it came out as `r/2`. A math span is delimited, not line-based: LaTeX
+  does not care where a newline falls between its `$` signs. A note that is
+  nothing but one formula now stays math however the source wrapped it, and
+  stacks whenever the page is wide enough. A homework sheet writes exactly
+  that shape, which is where this was found.
+
+### Changed
+
+- **A script sits beside its base unless the base takes limits.** Display used
+  to park a script it could not shrink -- a capital has no unicode subscript --
+  on a row of its own. That reads well alone and badly in company: the row
+  above a fraction holds the numerators and the row below holds the
+  denominators, so `\frac{r\dot\phi_L}{2}` left a lone `L` over the rule and
+  `ẋ_R` dropped its `R` onto the denominators' line. Scripts now attach beside
+  the base in display exactly as they do inline, and `\sum`, `\int`, the
+  `\lim`-like words and an already-tall base still take their limits over and
+  under. A fraction's two halves are also read one level deeper now, the way a
+  script's argument already was: the fraction owns the vertical.
+- **The one-line fraction is set tiny only when both halves are plain
+  digits** (`¹∕₇`, `³∕₁₆`). 0-9 is the one super/subscript range unicode
+  draws completely and evenly, so it reads like the precomposed `½` beside
+  it; the letter forms are patchy and small enough to misread, which is how
+  `\frac{r}{2}` came out `ʳ∕₂` and `\frac{a+b}{2}` came out `ᵃ⁺ᵇ∕₂`. Those
+  are now `r/2` and `(a+b)/2`, bracketed on whichever side could be misread.
+  The test is explicitly ASCII: `str.isdigit()` is also true of `²` and `٣`,
+  and shrinking something already tiny is the bug.
+
 ### Added
 
 - **`tools/tex2hw.py`: one LaTeX document → one notebook.** A homework

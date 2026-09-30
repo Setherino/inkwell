@@ -133,7 +133,7 @@ class LectureTests(unittest.TestCase):
         prose = next(line for line in rows if "Boltzmann" in line)
         self.assertLess(T.cols(prose), 110)
 
-    # --- the maths --------------------------------------------------------
+    # --- the math --------------------------------------------------------
     def test_no_latex_source_leaks_onto_the_page(self):
         painted = "\n".join(page(self.app, 92))
         for leak in ("\\frac", "\\int", "\\Delta", "\\ln", "$$", "\\times"):

@@ -22,7 +22,7 @@ What it does that tex2ink alone does not:
   checkbox to tick as you work, which is what the space is *for*
 * ``\title`` / ``\author`` / ``\date`` become the notebook's front matter
   -- a title, a ``due:`` pair, the file it came from -- instead of prose
-* ``\(...\)`` is inline maths, the same as ``$...$``
+* ``\(...\)`` is inline math, the same as ``$...$``
 * ``\[...\]`` and ``$$...$$`` are lifted out before the block scanner runs.
   tex2ink looks for ``\begin`` first, so a display wrapped round
   ``\begin{array}`` or ``\begin{bmatrix}`` otherwise comes apart around its
@@ -123,11 +123,11 @@ def expand(tex: str, defined: dict, rounds: int = 8) -> str:
     return tex
 
 
-# --- maths the block scanner must not see -----------------------------------
+# --- math the block scanner must not see -----------------------------------
 def protect(tex: str) -> tuple[str, list]:
     r"""Lift every display out of *tex*, leaving a paragraph of its own.
 
-    tex2ink walks ``\begin`` before it walks maths, so a display built out
+    tex2ink walks ``\begin`` before it walks math, so a display built out
     of ``\begin{array}`` has to be gone before it looks.
     """
     held: list[str] = []

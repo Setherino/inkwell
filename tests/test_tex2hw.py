@@ -115,14 +115,14 @@ class ThePreamble(unittest.TestCase):
 
 
 class DisplayMaths(unittest.TestCase):
-    r"""tex2ink looks for \begin before it looks for maths, so a display
+    r"""tex2ink looks for \begin before it looks for math, so a display
     built out of an environment has to be lifted out before it runs."""
 
     def test_an_array_inside_display_maths_stays_one_equation(self):
-        maths = [t for t in texts(convert(SHEET)) if t.startswith("$$")]
-        self.assertEqual(len(maths), 1)
-        self.assertIn(r"\begin{matrix}", maths[0])
-        self.assertEqual(S.classify(maths[0]).kind, S.MATH)
+        math = [t for t in texts(convert(SHEET)) if t.startswith("$$")]
+        self.assertEqual(len(math), 1)
+        self.assertIn(r"\begin{matrix}", math[0])
+        self.assertEqual(S.classify(math[0]).kind, S.MATH)
 
     def test_no_note_is_left_holding_a_bare_display_delimiter(self):
         for text in texts(convert(SHEET)):

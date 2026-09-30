@@ -9,7 +9,8 @@ and ``\\begin{bmatrix}`` come out square.
 Two modes:
 
 * **inline** (``$...$`` inside a sentence) is forced onto one line -- unicode
-  super/subscripts, ``∕`` fractions -- because prose has to keep flowing
+  super/subscripts, and a ``∕`` fraction where both halves are digits --
+  because prose has to keep flowing
 * **display** (``$$...$$`` on its own) may use as many rows as it likes
 
 Anything it cannot read is passed through unchanged rather than mangled.
@@ -22,14 +23,18 @@ form has to be said another way. It is never said with a bare ``^`` or ``_``:
 those are the writer's source, not typesetting, and on the page they read as a
 mistake. Instead:
 
-* **display**, outside a matrix, stacks it as a real box -- superscript on the
-  row above the baseline, subscript on the row below, exactly where the eye
-  looks for them. If either half of a cluster has to stack, both do, so a
-  single ``w`` never carries a tiny ``ᵏ`` beside a full-size ``i,j``.
-* **inline**, and inside a matrix cell, cannot grow rows, so the script is
-  wrapped in tiny parentheses instead: ``⁽ ⁾`` for a superscript, ``₍ ₎`` for a
-  subscript -- ``k₍B₎``, ``w₍i,j₎ᵏ``, ``e⁽iπ⁾``. The delimiters are the size
-  cue; the content stays full size and therefore stays readable.
+* the script is wrapped in tiny parentheses beside its base: ``⁽ ⁾`` for a
+  superscript, ``₍ ₎`` for a subscript -- ``k₍B₎``, ``w₍i,j₎ᵏ``, ``e⁽iπ⁾``.
+  The delimiters are the size cue; the content stays full size and therefore
+  stays readable. Display does this too, and gets the same answer inline
+  would.
+* **only a base that takes limits** grows rows for them: ``\sum``, ``\int``,
+  the ``\lim``-like words, and an already-tall base such as a bracketed
+  matrix. Display used to park *any* unshrinkable script on its own row, which
+  reads well alone and badly in company: the row above a fraction holds the
+  numerators and the row below holds the denominators, so
+  ``\frac{r\dot\phi_L}{2}`` left a lone ``L`` sitting over the rule with
+  nothing to say whose it was.
 
 Word-like scripts stay in full-size letters on purpose (see ``scriptify``), and
 if any script of a given kind in an expression has no unicode form then none of
@@ -104,7 +109,7 @@ SPACES = {"quad": "  ", "qquad": "    ", ",": " ", ";": " ", ":": " ",
           "!": "", " ": " ", "enskip": " ", "enspace": " ",
           "thinspace": " ", "medspace": " ", "thickspace": " "}
 
-# Commands that say something about *style*, not about the maths. They leave
+# Commands that say something about *style*, not about the math. They leave
 # nothing on the page.
 NOOPS = {"displaystyle", "textstyle", "scriptstyle", "scriptscriptstyle",
          "limits", "nolimits", "hline", "centering", "noalign", "protect",
@@ -114,7 +119,7 @@ NOOPS = {"displaystyle", "textstyle", "scriptstyle", "scriptscriptstyle",
 DIMENS = {"arraycolsep", "arrayrulewidth", "tabcolsep", "arraystretch",
           "baselineskip", "abovedisplayskip", "belowdisplayskip"}
 # A change of face is nothing a terminal can show, so these just render their
-# argument -- but as maths, not as raw text, or "\\boldsymbol{\\hat{x}}" would put
+# argument -- but as math, not as raw text, or "\\boldsymbol{\\hat{x}}" would put
 # braces on the page.
 FONTS = ("mathbf", "bf", "boldsymbol", "mathit", "it", "mathsf", "mathnormal",
          "textbf", "textit", "textsl", "textsf", "texttt", "textnormal",
@@ -127,7 +132,7 @@ ACCENTS = {"vec": "⃗", "hat": "̂", "bar": "̄", "tilde": "̃",
 WIDE_ACCENTS = {"overline"}
 
 # Only the letters a monospace face actually carries. 𝔼, 𝔽 and 𝟙 live in the
-# astral maths planes, which Menlo -- the face inkwell/pdf.py draws with -- does
+# astral math planes, which Menlo -- the face inkwell/pdf.py draws with -- does
 # not have, and a letter the reader can see beats one they cannot.
 BLACKBOARD = {"R": "ℝ", "N": "ℕ", "Z": "ℤ", "Q": "ℚ", "C": "ℂ", "P": "ℙ",
               "H": "ℍ"}
@@ -160,11 +165,31 @@ SUBS = {"0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅",
         "o": "ₒ", "p": "ₚ", "r": "ᵣ", "s": "ₛ", "t": "ₜ", "u": "ᵤ",
         "v": "ᵥ", "x": "ₓ"}
 
+# Tiny fractions are built only out of these. The 0-9 super/subscripts are a
+# complete, evenly drawn set, so "¹∕₇" reads like the precomposed "½" beside
+# it; the letter forms are patchy and small enough to misread.
+DIGITS = frozenset("0123456789")
+MAX_TINY = 3            # digits a side, past which tiny stops being legible
+
+
+def _tiny_digits(text: str) -> bool:
+    """ASCII 0-9 only, and few enough to stay readable when shrunk.
+
+    Deliberately not ``str.isdigit()``: that is also true of "²" and "٣",
+    and shrinking something already tiny is how "ʳ∕₂" happened.
+    """
+    return 0 < len(text) <= MAX_TINY and all(ch in DIGITS for ch in text)
+
+
 VULGAR = {("1", "2"): "½", ("1", "3"): "⅓", ("2", "3"): "⅔", ("1", "4"): "¼",
           ("3", "4"): "¾", ("1", "5"): "⅕", ("1", "6"): "⅙", ("1", "8"): "⅛",
           ("3", "8"): "⅜", ("5", "8"): "⅝", ("7", "8"): "⅞"}
 
 BIG_OPS = "∑∏∫∬∮⋃⋂"
+# Operators written as words that still take their limits under them the way
+# \sum does. Without these \lim would set "x → 0" beside "lim" instead.
+LIMIT_WORDS = frozenset(("lim", "max", "min", "sup", "inf",
+                         "argmax", "argmin", "limsup", "liminf"))
 CLOSERS = set(")]}⟩⌉⌋|")
 # Relations and binary operators keep the space the writer typed around them;
 # a letter-like symbol (\Delta S -> ΔS) does not.
@@ -409,7 +434,16 @@ class Parser:
         if name in FUNCTIONS:
             return Box.text(name + " ")
         if name == "frac" or name == "dfrac" or name == "tfrac":
-            return self.frac(self.group(), self.group())
+            # Read both halves one level deeper, exactly as a script's
+            # argument is read: the fraction already owns the vertical, and a
+            # numerator that stacks a subscript onto its own row puts that
+            # letter among the other numerators on the line.
+            self.depth += 1
+            try:
+                num, den = self.group(), self.group()
+            finally:
+                self.depth -= 1
+            return self.frac(num, den)
         if name == "sqrt":
             return self.sqrt()
         if name in NOOPS:
@@ -484,12 +518,14 @@ class Parser:
             if not self.display:
                 if (top, bottom) in VULGAR:
                     return Box.text(VULGAR[(top, bottom)])
-                # The ⁿ∕₂ form only stays readable for very short pieces.
-                short = max(len(top), len(bottom)) <= 3
-                up = scriptify(top, SUPERS) if short else None
-                down = scriptify(bottom, SUBS) if short else None
-                if up and down:
-                    return Box.text(f"{up}∕{down}")
+                # Tiny only for plain digits -- see _tiny_digits. A letter set
+                # small is the thing that made "ʳ∕₂" and "ᵃ⁺ᵇ∕₂" unreadable,
+                # and a solidus with the loose side bracketed says the same
+                # in glyphs the reader already knows.
+                if _tiny_digits(top) and _tiny_digits(bottom):
+                    up, down = scriptify(top, SUPERS), scriptify(bottom, SUBS)
+                    if up and down:
+                        return Box.text(f"{up}∕{down}")
                 return Box.text(f"{_paren(top)}/{_paren(bottom)}")
         width = max(num.width, den.width) + 2
         return stack(num, Box.text("─" * width), den)
@@ -630,10 +666,10 @@ class Parser:
 
     def attach(self, base: Box, sup: Box | None, sub: Box | None) -> Box:
         """Hang a superscript and a subscript off a base."""
-        big = base.height == 1 and base.lines[0].strip() in BIG_OPS
-        roomy = self.display and not self.depth
-        if roomy and (big or base.height > 1):
-            # Limits go over and under: \sum, \int, a bracketed matrix.
+        flat = base.lines[0].strip() if base.height == 1 else ""
+        takes_limits = flat in BIG_OPS or flat in LIMIT_WORDS or base.height > 1
+        if self.display and not self.depth and takes_limits:
+            # Limits go over and under: \sum, \int, \lim, a bracketed matrix.
             return stack(sup or Box.text(""), base, sub or Box.text(""))
         up, down = _flatten(sup), _flatten(sub)
         if not up and not down:
@@ -642,9 +678,10 @@ class Parser:
         for text, table, kind in ((down, SUBS, "_"), (up, SUPERS, "^")):
             if text:
                 forms[kind] = None if self.plain[kind] else scriptify(text, table)
-        if roomy and not all(forms.values()):
-            # Nowhere to shrink to, but plenty of rows: stack it properly.
-            return hcat([base, _column(up, down)])
+        # Anything else keeps its scripts beside the base, display or not. A
+        # letter parked on the row above or below is read as part of whatever
+        # else is on that row: next to a fraction it lands among the
+        # numerators, which is how "rφ̇/2" grew a stray L over the rule.
         # Subscript first, then superscript: x_i^2 reads as xᵢ².
         pieces = [base]
         for text, parens, kind in ((down, SUB_PAREN, "_"), (up, SUP_PAREN, "^")):

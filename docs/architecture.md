@@ -30,7 +30,7 @@ other way round.
            shaping.py        one line of text -> what kind of box it is
                 │
           typography.py      widths, columns, block fonts
-           latex.py          $maths$ -> a box model with baselines
+           latex.py          $math$ -> a box model with baselines
                 │
           document.py        ALL the notes together -> a laid-out page
                 │

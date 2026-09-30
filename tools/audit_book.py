@@ -11,11 +11,11 @@ attributes -- by six detectors:
 
   font    a character the font has no glyph for, or U+FFFD
   latex   a ``\\command`` that survived into the page
-  script  a raw ``^`` or ``_`` left over from maths
+  script  a raw ``^`` or ``_`` left over from math
   wide    a row whose display width is past the right margin
   blank   three or more blank rows in a row
   sparse  a block of page that is mostly whitespace
-  delim   a bracket opened in maths and never closed
+  delim   a bracket opened in math and never closed
 
 Nothing is written anywhere: the notes folder is read and left alone.
 
@@ -37,7 +37,7 @@ is worse than none. The exclusions, and why each one is not a defect:
   inline code names are set in mono look-alikes (``𝚚_𝚛𝚊𝚗𝚍``): all excluded
   from the script-marker check.
 * Prose wraps mid-parenthesis all the time, so the delimiter check runs
-  only over maths, and only over a whole run of maths rows at once -- an
+  only over math, and only over a whole run of math rows at once -- an
   equation broken across two rows still has to balance, but only as a
   block.
 """
@@ -218,7 +218,7 @@ MARKERS = "^_"
 
 
 def script_findings(rows: Sequence[Row]) -> list:
-    """A ``^`` or ``_`` left on the page by maths that did not typeset."""
+    """A ``^`` or ``_`` left on the page by math that did not typeset."""
     found = []
     for i, item in enumerate(rows):
         if "code" in item.attrs:
@@ -326,9 +326,9 @@ def _unbalanced(text: str) -> str:
 
 
 def delimiter_findings(rows: Sequence[Row], attr: str = "math") -> list:
-    """Maths whose brackets do not close.
+    """Math whose brackets do not close.
 
-    Checked a block at a time -- consecutive maths rows are one equation,
+    Checked a block at a time -- consecutive math rows are one equation,
     and an equation broken over two rows still balances across the pair.
     Prose is not checked at all: it wraps mid-parenthesis constantly.
     """

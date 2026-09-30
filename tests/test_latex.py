@@ -34,7 +34,7 @@ class InlineTests(unittest.TestCase):
 
     def test_fractions(self):
         self.assertEqual(L.inline(r"\frac{1}{2}mv^2"), "½mv²")
-        self.assertEqual(L.inline(r"\frac{n}{2}"), "ⁿ∕₂")
+        self.assertEqual(L.inline(r"\frac{n}{2}"), "n/2")
         self.assertEqual(L.inline(r"\frac{f(x+h)-f(x)}{h}"), "(f(x+h)-f(x))/h")
 
     def test_roots(self):
@@ -208,12 +208,14 @@ class PrescriptTests(unittest.TestCase):
 class ScriptFallbackTests(unittest.TestCase):
     """No script may ever put a bare ^ or _ on the page."""
 
-    def test_display_stacks_what_it_cannot_scriptify(self):
-        self.assertEqual(L.display(r"w_{i,j}^k"), [" k", "w", " i,j"])
+    def test_display_sets_it_beside_the_base_like_inline(self):
+        # It used to park the script on its own row. Beside a fraction that
+        # row is the numerators', so the letter read as one of them.
+        self.assertEqual(L.display(r"w_{i,j}^k"), ["w₍i,j₎ᵏ"])
 
-    def test_a_stacked_cluster_never_mixes_with_unicode(self):
-        # ^k could be a unicode ᵏ, but its partner _{i,j} cannot, so both stack.
-        self.assertNotIn("ᵏ", "".join(L.display(r"w_{i,j}^k")))
+    def test_display_and_inline_agree_on_a_cluster(self):
+        for src in (r"w_{i,j}^k", r"\dot{x}_R", r"S_{r,\alpha}", r"e^{i\pi}"):
+            self.assertEqual(L.display(src), [L.inline(src)], src)
 
     def test_inline_and_matrix_cells_use_tiny_parentheses(self):
         self.assertEqual(L.inline(r"w_{i,j}^k"), "w₍i,j₎ᵏ")
@@ -241,6 +243,63 @@ class ScriptFallbackTests(unittest.TestCase):
                 self.assertNotIn("^", out, src)
 
 
+class OnlyLimitsGoAboveAndBelow(unittest.TestCase):
+    r"""A script sits beside its base unless the base takes limits.
+
+    A capital has no unicode subscript, so display used to park it on the row
+    below. Next to a fraction that row holds the denominators, and the row
+    above holds the numerators, so ``\frac{r\dot\phi_L}{2}`` put a lone ``L``
+    over the rule and the equation could not be read. ``\sum``, ``\int``,
+    ``\lim`` and an already-tall base still take limits over and under.
+    """
+
+    NUMERATOR = r"\frac{r\dot{\phi}_L}{2}"
+
+    def test_a_subscript_in_a_numerator_stays_beside_its_base(self):
+        lines = L.display(self.NUMERATOR)
+        self.assertEqual(len(lines), 3, lines)     # numerator, rule, denominator
+        self.assertIn("φ̇₍L₎", lines[0])
+        self.assertIn("─", lines[1])
+        self.assertEqual(lines[2].strip(), "2")
+
+    def test_no_stray_letter_is_left_on_a_row_of_its_own(self):
+        self.assertNotIn("L", L.display(self.NUMERATOR)[1])
+        self.assertNotIn("L", L.display(self.NUMERATOR)[2])
+
+    def test_an_exponent_no_longer_shares_the_numerator_row(self):
+        # The Gaussian: the "1" over the root, and e's exponent, both used to
+        # land on the top row with nothing to say which owned which.
+        lines = L.display(r"f(x)=\frac{1}{\sqrt{2\pi\sigma^2}}"
+                          r"e^{-\frac{(x-\mu)^2}{2\sigma^2}}")
+        top = [line for line in lines if "(x-μ)" in line]
+        self.assertTrue(all("e⁽" in line for line in top), lines)
+
+    def test_a_big_operator_still_takes_limits(self):
+        for src in (r"\sum_{i=1}^{n} x_i", r"\int_{T_1}^{T_2} f dT",
+                    r"\prod_{k=1}^{m} a_k"):
+            self.assertEqual(len(L.display(src)), 3, src)
+
+    def test_a_limit_word_still_takes_limits(self):
+        lines = L.display(r"\lim_{x \to 0} \frac{\sin x}{x}")
+        self.assertTrue(any("x → 0" in line for line in lines), lines)
+        self.assertTrue(any(line.strip().startswith("lim") for line in lines))
+
+    def test_a_tall_base_still_takes_its_script_above(self):
+        lines = L.display(r"\begin{bmatrix} a & b \\ c & d \end{bmatrix}^T")
+        self.assertEqual(lines[0].strip(), "T")
+
+    def test_the_equation_from_the_homework_reads_in_three_rows(self):
+        lines = L.display(r"\dot{x}_R = \frac{r\dot{\phi}_L}{2} "
+                          r"+ \frac{r\dot{\phi}_R}{2} "
+                          r"= \frac{r}{2}\left( \dot{\phi}_L "
+                          r"+ \dot{\phi}_R \right)")
+        self.assertEqual(len(lines), 3, lines)
+        # \dot{x} is emitted decomposed, as a terminal wants it, so compare
+        # the composed forms rather than the code points.
+        import unicodedata
+        self.assertIn("ẋ₍R₎", unicodedata.normalize("NFC", lines[1]))
+
+
 class AccentTests(unittest.TestCase):
     def test_a_point_accent_marks_only_the_first_character(self):
         # \hat{q_i} is one hat over the q, not a hat on every glyph.
@@ -260,8 +319,10 @@ class AccentTests(unittest.TestCase):
 
 class TallInsideAScriptTests(unittest.TestCase):
     def test_a_fraction_in_an_exponent_goes_linear(self):
+        # The point is that no rule character gets into a script.
         lines = L.display(r"e^{-\frac{(x-\mu)^2}{2\sigma^2}}")
-        self.assertEqual(lines, [" -(x-μ)²/2σ²", "e"])
+        self.assertEqual(lines, ["e⁽-(x-μ)²/2σ²⁾"])
+        self.assertNotIn("─", "".join(lines))
 
     def test_the_normal_distribution_is_not_mangled(self):
         out = "\n".join(L.display(
@@ -321,6 +382,49 @@ class SymbolTests(unittest.TestCase):
         lines = L.display(r"\overrightarrow{AB}")
         self.assertEqual(lines, ["─→", "AB"])
         self.assertNotIn("overrightarrow", L.inline(r"\overrightarrow{AB}"))
+
+
+class SmallFractionsAreDigitsOnly(unittest.TestCase):
+    r"""The one-line fraction is tiny only where unicode does it well.
+
+    ``0-9`` have a complete, well-drawn super/subscript set, so ``¹∕₇`` reads
+    like the precomposed ``½`` beside it. The letter forms are patchy and
+    small enough to misread -- ``\frac{r}{2}`` came out ``ʳ∕₂`` and
+    ``\frac{a+b}{2}`` came out ``ᵃ⁺ᵇ∕₂`` -- so those are set plainly.
+    """
+
+    def test_a_precomposed_fraction_still_wins(self):
+        self.assertEqual(L.inline(r"\frac{2}{3}"), "⅔")
+        self.assertEqual(L.inline(r"\frac{1}{2}"), "½")
+
+    def test_digits_are_set_tiny(self):
+        self.assertEqual(L.inline(r"\frac{1}{7}"), "¹∕₇")
+        self.assertEqual(L.inline(r"\frac{3}{16}"), "³∕₁₆")
+        self.assertEqual(L.inline(r"\frac{12}{25}"), "¹²∕₂₅")
+
+    def test_letters_are_set_plainly(self):
+        self.assertEqual(L.inline(r"\frac{r}{2}"), "r/2")
+        self.assertEqual(L.inline(r"\frac{n}{2}"), "n/2")
+        self.assertEqual(L.inline(r"\frac{m}{s}"), "m/s")
+
+    def test_anything_but_digits_is_plain_even_when_it_is_short(self):
+        self.assertEqual(L.inline(r"\frac{2x}{3}"), "2x/3")
+        self.assertEqual(L.inline(r"\frac{a+b}{2}"), "(a+b)/2")
+
+    def test_digits_unicode_calls_digits_are_not_shrunk_again(self):
+        # "²" and "٣" both satisfy str.isdigit(), so the rule is explicit
+        # about ASCII rather than trusting that method.
+        self.assertEqual(L.inline(r"\frac{²}{2}"), "²/2")
+        self.assertEqual(L.inline(r"\frac{٣}{2}"), "٣/2")
+
+    def test_a_long_run_of_digits_stays_plain(self):
+        self.assertEqual(L.inline(r"\frac{1}{1000}"), "1/1000")
+
+    def test_display_still_stacks_them_all(self):
+        for src in (r"\frac{1}{7}", r"\frac{r}{2}", r"\frac{a+b}{2}"):
+            lines = L.display(src)
+            self.assertEqual(len(lines), 3, src)
+            self.assertIn("─", lines[1], src)
 
 
 class GlyphCoverageTests(unittest.TestCase):
@@ -384,7 +488,7 @@ class ProseTests(unittest.TestCase):
 
     def test_has_math(self):
         self.assertTrue(L.has_math("energy is $E=mc^2$ here"))
-        self.assertFalse(L.has_math("no maths at all"))
+        self.assertFalse(L.has_math("no math at all"))
 
 
 if __name__ == "__main__":

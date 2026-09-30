@@ -455,7 +455,7 @@ class _Converter:
                 child = self.notes[first]
                 child.text = left + child.text.lstrip()
 
-    # -- maths --------------------------------------------------------------
+    # -- math --------------------------------------------------------------
     def _equation(self, env, body, indent):
         if env in ALIGNED:
             rows = _split_depth0(body, r"\\\\")
@@ -549,7 +549,7 @@ class _Converter:
                 text = re.sub(r"\s*;\s*", "; ", text)
                 text = re.sub(r":\s*;\s*", ": ", text)
                 # A bar anywhere in a cell would split the row, so unlike
-                # prose it goes even inside maths -- but to a drawable one.
+                # prose it goes even inside math -- but to a drawable one.
                 text = text.replace("|", BAR)
                 cells.append(text or EMPTY_CELL)
             if any(c != EMPTY_CELL for c in cells):
@@ -560,10 +560,10 @@ class _Converter:
         # in one is already faithful and is left exactly as the book sets it.
         # This book's Bayes-filter listing instead opens with
         #     \begin{Verbatim}[codes={\catcode`$=3\catcode`^=7\catcode`_=8}]
-        # which switches the maths shift back ON inside the block: the book
+        # which switches the math shift back ON inside the block: the book
         # *typesets* "x \in X" there, it does not print the dollars.  A code
         # note is never re-typeset by the reader (document.py lays S.CODE out
-        # verbatim, with no latex.substitute), so the maths has to be reduced
+        # verbatim, with no latex.substitute), so the math has to be reduced
         # to text here -- otherwise the page shows "$x \in X$" where the book
         # shows "x in X", which is the book's meaning dropped, not kept.
         live_math = bool(_MATH_CATCODE.search(inner[:_opt(inner, _ws(inner, 0))]))
@@ -577,11 +577,11 @@ class _Converter:
 
     # -- inline -------------------------------------------------------------
     def _inline(self, text: str) -> str:
-        maths: list[str] = []
+        math: list[str] = []
 
         def stash(m):
-            maths.append(_scrub_math(m.group(0)))
-            return f"\x00M{len(maths) - 1}\x00"
+            math.append(_scrub_math(m.group(0)))
+            return f"\x00M{len(math) - 1}\x00"
 
         text = _INLINE_MATH.sub(stash, text)
         text = self._commands(text)
@@ -592,7 +592,7 @@ class _Converter:
         text = re.sub(r"[ \t]{2,}", " ", text).strip()
         text = re.sub(r" ?\x00BR\x00 ?", "\n", text).strip()
         text = text.replace(CODE, "`")
-        text = re.sub(r"\x00M(\d+)\x00", lambda m: maths[int(m.group(1))], text)
+        text = re.sub(r"\x00M(\d+)\x00", lambda m: math[int(m.group(1))], text)
         return text
 
     def _commands(self, text: str) -> str:
@@ -732,7 +732,7 @@ BAR = "│"       # the one vertical bar Menlo, Consolas and DejaVu all have
 def _no_pipes(text: str) -> str:
     """Keep prose from reading as panes (``||``) or a table row (two ``|``).
 
-    Bars inside ``$...$`` are maths -- an absolute value or a norm -- and
+    Bars inside ``$...$`` are math -- an absolute value or a norm -- and
     ``shaping.classify`` ignores those, so they are left for the typesetter.
     Only a bare pipe in prose is swapped, and for one the PDF faces can
     actually draw: U+2223 DIVIDES and U+2016 DOUBLE VERTICAL LINE are both
@@ -750,7 +750,7 @@ def _no_pipes(text: str) -> str:
     return re.sub(r"\x00B(\d+)\x00", lambda m: spans[int(m.group(1))], kept)
 
 
-# --- typography that means nothing once maths is set in a terminal ---------
+# --- typography that means nothing once math is set in a terminal ---------
 _UNIT = r"(?:pt|pc|bp|em|ex|cm|mm|in|dd|cc|sp|mu)"
 _LENGTH = r"[-+]?(?:\d+\.?\d*|\.\d+)\s*" + _UNIT + r"\b"
 # "\arraycolsep=2pt", "\abovedisplayskip = 10pt plus 2pt minus 3pt": a TeX
@@ -766,15 +766,15 @@ _MATH_SIZE = re.compile(r"\\(?:displaystyle|textstyle|scriptstyle|"
 # Fixed-width spaces: the width is print-only, but the gap is real.
 _MATH_SPACE = re.compile(r"\s*\\(?:enskip|enspace|thinspace|negthinspace|"
                          r"medspace|thickspace)\b\s*")
-# \textbf{K} inside maths asks for bold; maths in a terminal has no bold,
+# \textbf{K} inside math asks for bold; math in a terminal has no bold,
 # so what is left of it is its argument.  (\text and \mathrm are NOT here:
-# "upright, in maths" is meaning, and inkwell.latex already sets them.)
+# "upright, in math" is meaning, and inkwell.latex already sets them.)
 _MATH_STYLE = re.compile(r"\\(?:textbf|textit|textsl|textsc|textmd|textup|"
                          r"emph)\s*(?=\{)")
 
 
 def _math_noise(src: str) -> str:
-    """Strip print-only commands from the inside of one piece of maths.
+    """Strip print-only commands from the inside of one piece of math.
 
     Only typography goes: anything that still means something (an accent,
     a symbol, \\text, an array) is left for inkwell.latex to typeset.

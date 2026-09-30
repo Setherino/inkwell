@@ -421,14 +421,14 @@ class Document:
     # --- pieces -----------------------------------------------------------
     @staticmethod
     def _math_or_text(raw: str, unicode_ok: bool) -> str:
-        """A value that is nothing but maths gets typeset as maths."""
+        """A value that is nothing but math gets typeset as math."""
         body = raw.strip()
         if len(body) > 2 and body.startswith("$") and body.endswith("$"):
             return latex.inline(body.strip("$"))
         return T.inline(latex.substitute(body), unicode_ok=unicode_ok)
 
     def _prose(self, raw: str, block: Block, unicode_ok: bool) -> str:
-        """Inline maths, then inline markup, then the model's emphasis."""
+        """Inline math, then inline markup, then the model's emphasis."""
         text = T.inline(latex.substitute(raw), unicode_ok=unicode_ok)
         emphasis = getattr(block.note, "emphasis", "")
         if emphasis and block.kind in (S.PARA, S.ITEM, S.CHECK, S.QUOTE, S.TERM):
@@ -495,7 +495,7 @@ class Document:
 
     def _math(self, block: Block, out: Layout, measure: int, offset: int,
               unicode_ok: bool) -> Layout:
-        """Display maths: typeset, then centred in the text column."""
+        """Display math: typeset, then centred in the text column."""
         lines = latex.display(block.shape.text)
         if max((T.cols(x) for x in lines), default=0) > measure:
             # Too wide to stack: fall back to the one-line form, wrapped if

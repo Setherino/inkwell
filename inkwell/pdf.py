@@ -1,6 +1,6 @@
 """Export the page as a PDF, the way it looks on screen.
 
-Same layout, same grid, same colours, same maths -- but where the terminal
+Same layout, same grid, same colours, same math -- but where the terminal
 had to fake bold and italic with look-alike code points (𝗯𝗼𝗹𝗱, 𝘪𝘵𝘢𝘭𝘪𝘤),
 paper has real type, so those are decoded back to ordinary letters drawn in
 the real Bold and Italic faces. The text comes out selectable and

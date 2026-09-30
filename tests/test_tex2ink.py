@@ -3,7 +3,7 @@
 The contract is the *markup* it emits: every note has to be something a
 person could have typed into the composer, so shaping.classify reads it
 the way we intend (a section is a section, an equation is one line of
-display maths, a figure is not a table because its caption had two pipes).
+display math, a figure is not a table because its caption had two pipes).
 """
 
 import json
@@ -203,7 +203,7 @@ class Lists(unittest.TestCase):
         self.assertEqual(texts(notes), ["- x"])
 
 
-class Maths(unittest.TestCase):
+class Math(unittest.TestCase):
     def test_equation_is_one_line_of_display_maths(self):
         notes = tex2ink.notes("\\begin{equation}\n  x = \n \\frac{a}{b}\n"
                               "\\end{equation}")
@@ -249,9 +249,9 @@ class MathsTypographicNoise(unittest.TestCase):
     """Print-only commands must not reach the reader's page.
 
     A terminal has no column spacing, no display/text style split and no
-    bold inside maths, so those commands carry no meaning here -- but
+    bold inside math, so those commands carry no meaning here -- but
     anything that *does* mean something (a real accent, a real symbol) is
-    left alone for inkwell.latex, which is the maths typesetter.
+    left alone for inkwell.latex, which is the math typesetter.
     """
 
     def test_arraycolsep_assignment_is_dropped_from_display_maths(self):
@@ -308,7 +308,7 @@ class MathsTypographicNoise(unittest.TestCase):
         self.assertEqual(texts(notes), [r"Let $\hat{X}$ be it."])
 
     def test_mathematical_text_commands_are_left_for_the_typesetter(self):
-        # \text and \mathrm mean "upright, in maths"; the typesetter knows
+        # \text and \mathrm mean "upright, in math"; the typesetter knows
         # them, so they are meaning, not typography.
         notes = tex2ink.notes(r"\begin{equation}\text{if } x>0, "
                               r"\mathrm{d}x\end{equation}")
@@ -388,9 +388,9 @@ Standard & Two:
     def test_verbatim_that_switches_maths_back_on_is_typeset(self):
         # The book's Bayes-filter listing opens with
         #   \begin{Verbatim}[codes={\catcode`$=3 ...}]
-        # which restores "$" as the maths shift, so the book shows "x in X"
-        # set as maths, not the dollars.  A code note is never re-typeset by
-        # the reader, so the maths is reduced to text here.
+        # which restores "$" as the math shift, so the book shows "x in X"
+        # set as math, not the dollars.  A code note is never re-typeset by
+        # the reader, so the math is reduced to text here.
         notes = tex2ink.notes(
             "\\begin{Verbatim}[commandchars=\\\\\\{\\}, "
             "codes={\\catcode`$=3\\catcode`^=7\\catcode`_=8}]\n"

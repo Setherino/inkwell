@@ -3,7 +3,7 @@
 It renders every note through the real widget stack and looks for the
 handful of things that mean the conversion went wrong: a character the
 font cannot draw, a LaTeX command that survived, a raw ``^``/``_`` from
-maths, a row wider than the terminal, and maths whose brackets do not
+math, a row wider than the terminal, and math whose brackets do not
 close.
 
 Two kinds of test live here.
