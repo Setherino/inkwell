@@ -2,6 +2,12 @@ __pycache__/
 *.py[cod]
 .DS_Store
 
+# Packaging
+build/
+*.egg-info/
+.venv/
+venv/
+
 # Built readers. The archive is built, never committed -- see below.
 dist/
 *.pyz
@@ -9,8 +15,12 @@ IntroRobotics.command
 IntroRobotics.sh
 IntroRobotics.bat
 
-# The book. "Introduction to Autonomous Robots" is CC BY-NC-ND 4.0 and its
-# authors ask that compiled copies stay offline, so no converted chapter and
-# no built archive belongs in this repository. Build your own in one command:
-#     python3 tools/build_reader.py
+# Converted books. A book's own licence governs its text, and plenty of
+# them -- including "Introduction to Autonomous Robots" (CC BY-NC-ND 4.0),
+# the one this reader was written for -- do not permit redistributing a
+# converted copy. So no chapter and no built archive belongs in git; each
+# person converts their own:
+#     python3 tools/tex2ink.py ~/some-latex-book
+*-[0-9][0-9]-*.json
+*.book.json
 iar-*.json
